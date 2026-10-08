@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دليل تشغيل منصة رصد الغياب</title>
+<style>
+  body { font: 16px/1.9 Tahoma, "Segoe UI", sans-serif; max-width: 860px; margin: 0 auto; padding: 18px; color: #12282c; background: #fff; }
+  h1 { font-size: 1.7rem; } h2 { margin-top: 2.2rem; border-bottom: 2px solid #0b7a67; padding-bottom: 4px; } h3 { margin-top: 1.4rem; }
+  code, pre { direction: ltr; unicode-bidi: plaintext; background: #eef4f2; border-radius: 6px; font-family: Consolas, monospace; }
+  code { padding: 1px 6px; } pre { padding: 10px 14px; overflow-x: auto; text-align: left; }
+  .warn { background: #fdf0cf; border: 1px solid #c58b00; border-radius: 8px; padding: 10px 14px; }
+  .ok { background: #dcf5e4; border: 1px solid #15803d; border-radius: 8px; padding: 10px 14px; }
+  table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #c9d8d5; padding: 6px 10px; text-align: start; vertical-align: top; }
+  th { background: #eef4f2; }
+</style>
+</head>
+<body>
+<h1>دليل تشغيل منصة رصد الغياب المدرسي</h1>
+<p>المنصة تعمل على <b>Cloudflare</b> (الموقع وقاعدة البيانات) و<b>Firebase Authentication</b> (حسابات الدخول). كل ما في هذا الدليل يعمل بالخطط <b>المجانية</b>.</p>
+
+<div class="warn"><b>تنبيه مهم: لا تدفع ولا تشترك في أي شيء.</b> في Firebase اختر خطة <b>Spark (المجانية)</b> ولا تضغط «Upgrade» أو «Blaze» ولا تفعّل «Identity Platform». في Cloudflare اختر <b>Free</b>. لا تحتاج بطاقة بنكية في أي خطوة من هذا الدليل. إن طُلبت منك بطاقة، توقف ولا تكمل.</div>
+
+<h2>0) ما الذي تحتاجه</h2>
+<ul>
+  <li>برنامج <b>Node.js</b> (النسخة LTS) من nodejs.org — تثبيت عادي.</li>
+  <li>حساب Google (لـ Firebase) وحساب Cloudflare مجاني (البريد الإلكتروني فقط).</li>
+  <li>مجلد المشروع: <code>site</code> (الواجهة) و<code>server</code> (الخادم وقاعدة البيانات) و<code>guide</code> (هذا الدليل).</li>
+</ul>
+
+<h2>1) إعداد Firebase (حسابات الدخول)</h2>
+<ol>
+  <li>افتح <b>console.firebase.google.com</b> ← <b>Create a project</b> ← أي اسم (مثلاً <code>school-attendance</code>) ← عطّل Google Analytics ← Create.</li>
+  <li>من القائمة: <b>Build ← Authentication ← Get started ← Sign-in method</b> ← فعّل <b>Email/Password</b> فقط (الخيار الأول، وليس Email link) ← Save.</li>
+  <li><b>حساب الإدارة:</b> Authentication ← <b>Users ← Add user</b> ← البريد <code>admin@school.example</code> (بريد شكلي لا تحتاج أن يكون حقيقياً) وكلمة مرور قوية من اختيارك (12 حرفاً فأكثر). بعد إنشائه انسخ قيمة <b>User UID</b> (نص طويل) — ستحتاجه في الخطوة 3.</li>
+  <li><b>مفتاح الواجهة:</b> ⚙ Project settings ← General ← <b>Web API Key</b> (يبدأ بـ AIza…) انسخه.</li>
+  <li><b>حساب الخدمة:</b> ⚙ Project settings ← <b>Service accounts ← Generate new private key</b> ← يُنزَّل ملف JSON. هذا الملف سرّي جداً: لا ترسله لأحد ولا ترفعه لأي مكان، وستحذفه بعد الخطوة 3.</li>
+  <li><b>تقييد المفتاح (موصى به):</b> افتح <b>console.cloud.google.com ← APIs &amp; Services ← Credentials</b> ← مفتاح Browser key ← <b>API restrictions ← Restrict key ← Identity Toolkit API</b> فقط ← Save. (لا تضع قيد HTTP referrers لأن الاتصال يأتي من خوادم Cloudflare.)</li>
+</ol>
+
+<h2>2) إعداد Cloudflare (الموقع وقاعدة البيانات)</h2>
+<p>افتح نافذة الأوامر (Command Prompt أو PowerShell) داخل مجلد <code>server</code>:</p>
+<pre>npm install
+npx wrangler login
+npx wrangler d1 create school-db</pre>
+<ol>
+  <li>أمر <code>login</code> يفتح المتصفح لتسجيل الدخول إلى Cloudflare والموافقة.</li>
+  <li>أمر <code>d1 create</code> يطبع <code>database_id</code>. انسخه وضعه في ملف <code>wrangler.toml</code> مكان النص العربي في سطر <code>database_id</code>.</li>
+  <li>أنشئ جداول القاعدة:
+<pre>npm run db:remote</pre></li>
+</ol>
+
+<h2>3) إضافة الأسرار (لا تُكتب في أي ملف)</h2>
+<pre>npx wrangler secret put FIREBASE_API_KEY
+npx wrangler secret put ADMIN_UIDS
+type مسار-ملف-الخدمة.json | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT</pre>
+<ul>
+  <li>الأول: الصق Web API Key. الثاني: الصق User UID الخاص بحساب الإدارة (يمكن إضافة أكثر من مدير مفصولين بفاصلة).</li>
+  <li>الثالث: يرسل محتوى ملف JSON كاملاً كسرّ. إن ظهر سؤال عن إنشاء Worker جديد أجب <b>Y</b>.</li>
+  <li>بعد نجاحه <b>احذف ملف JSON من جهازك</b>.</li>
+</ul>
+
+<h2>4) النشر</h2>
+<pre>npm run deploy</pre>
+<p>سيظهر رابط مثل <code>https://school-attendance.اسم-حسابك.workers.dev</code> — هذا رابط الموقع. جرّب فتحه من الجوال.</p>
+
+<h2>5) أول استخدام</h2>
+<ol>
+  <li>افتح الموقع ← <b>لوحة الإدارة</b> ← ادخل باسم المستخدم <code>admin</code> وكلمة المرور التي اخترتها في Firebase (لا تحتاج كتابة بريد).</li>
+  <li>تبويب <b>المعلمون</b> ← الصق قائمة الأسماء (الملف <code>server/teachers.txt</code> فيه الـ47 اسماً جاهزة) ← <b>إنشاء الحسابات</b>. ينشئ لكل معلم اسم مستخدم (t01، t02 …) وكلمة مرور عشوائية.</li>
+  <li><b>اطبع البطاقات أو نزّل ملف CSV فوراً</b>: كلمات المرور تظهر هذه المرة فقط ولا تُخزَّن في أي مكان. سلّم كل معلم بطاقته. <b>المعلم يدخل بكتابة اسمه</b> (مثل «احمد اسلامية»، ولا يلزم كلمة «الأستاذ») وكلمة المرور من البطاقة، ثم يُطلب منه فوراً اختيار كلمة مرور خاصة به. وبعد ذلك يستطيع تغييرها متى شاء من زر المفتاح أعلى الصفحة.</li>
+  <li>تبويب <b>الصفوف والطلاب</b> ← أضف كل صف أساسي (رقم الطالب - اسم الطالب في كل سطر)، ثم المواد المتنقلة بنفس أرقام الطلاب لتُربط بصفوفهم تلقائياً.</li>
+  <li>تبويب <b>الإعدادات</b>: عدّل اسم المدرسة واسم المدير ولائحة الإجراءات.</li>
+  <li>نسيَ معلم كلمة مروره؟ المعلمون ← <b>كلمة مرور جديدة</b> (تظهر لك مرة واحدة).</li>
+</ol>
+
+<h2>6) حماية إضافية مجانية (موصى بها)</h2>
+<h3>أ) Cloudflare Turnstile (بديل CAPTCHA مجاني)</h3>
+<ol>
+  <li>لوحة Cloudflare ← <b>Turnstile ← Add widget</b> ← أضف نطاق موقعك (مثلاً <code>school-attendance.اسم-حسابك.workers.dev</code>) ← Managed.</li>
+  <li>ضع <b>Site Key</b> في <code>wrangler.toml</code> مكان <code>TURNSTILE_SITE_KEY</code>، وأضف <b>Secret Key</b> بالأمر: <code>npx wrangler secret put TURNSTILE_SECRET</code> ثم <code>npm run deploy</code>.</li>
+</ol>
+<h3>ب) تحديد معدل محاولات الدخول من Cloudflare</h3>
+<p>الموقع يمنع بنفسه التخمين (5 محاولات خاطئة لكل مستخدم و10 لكل عنوان خلال 10 دقائق). يمكنك إضافة طبقة ثانية من لوحة Cloudflare ← <b>Security ← WAF ← Rate limiting rules</b> (الخطة المجانية تسمح بقاعدة واحدة) على المسار <code>/api/login</code>. هذه الخطوة اختيارية، وخيارات اللوحة تتغير أحياناً.</p>
+
+<h2>7) تجربة على جهازك قبل النشر (موصى به، دون أي حساب)</h2>
+<div class="warn"><b>مهم:</b> لا تفتح <code>index.html</code> بالنقر المزدوج. الموقع يحتاج الخادم، وبدونه لن يعمل الدخول (ستظهر رسالة «الخادم غير متصل»). للتجربة استخدم الطريقة التالية.</div>
+<ol>
+  <li>ثبّت Node.js (الخطوة 0) مرة واحدة.</li>
+  <li>افتح مجلد <code>server</code> وانقر مرتين على <b><code>start-local.bat</code></b>. (أو من نافذة الأوامر: <code>node local-setup.mjs</code>.)</li>
+  <li>ينتظر دقيقة في أول مرة، ثم يفتح المتصفح على <code>http://localhost:8787</code> وقد جهّز كل شيء: قاعدة بيانات تجريبية وحسابات الـ47 معلماً.</li>
+  <li>كلمات مرور المعلمين المؤقتة في الملف <code>server/teachers-login.csv</code> (يُفتح بـ Excel). المعلم يكتب اسمه + كلمة المرور.</li>
+  <li>الإدارة: اسم المستخدم <code>admin</code> وكلمة المرور من الملف <code>server/.dev.vars</code> (السطر DEV_ADMIN_PASSWORD).</li>
+</ol>
+<p>هذا الوضع للتجربة فقط: بيانات وهمية على جهازك، لا يتصل بـ Firebase، ولا يمكن تفعيله على الموقع المنشور. اختبارات الأمان: <code>npm test</code> (تحتاج Node 22 أو أحدث).</p>
+
+<h2>8) النسخ الاحتياطي</h2>
+<pre>npx wrangler d1 export school-db --remote --output=backup.sql</pre>
+<p>شغّله مرة كل أسبوع أو شهر واحفظ الملف في مكان آمن (يحتوي أسماء الطلاب فلا تنشره). Cloudflare تحتفظ أيضاً بخاصية الاسترجاع الزمني (Time Travel) لمدة محدودة تختلف حسب الخطة؛ راجع صفحة D1 في وثائق Cloudflare لمعرفة المدة الحالية.</p>
+
+<h2>9) كيف تشرح النظام (خريطة الملفات)</h2>
+<table>
+<tr><th>الملف</th><th>وظيفته</th></tr>
+<tr><td><code>site/index.html</code></td><td>هيكل الصفحة الفارغ (يُبنى كل شيء بعده بالـ JavaScript).</td></tr>
+<tr><td><code>site/style.css</code></td><td>كل الألوان والتنسيق: الوضع الداكن والفاتح، الجوال، الطباعة.</td></tr>
+<tr><td><code>site/app.js</code></td><td>كل شاشات الموقع: الرئيسية، الدخول، رصد الغياب، التقارير، لوحة الإدارة. مقسّم بأرقام وتعليقات عربية.</td></tr>
+<tr><td><code>site/*.woff2</code></td><td>خط Tajawal (مستضاف محلياً بدون اتصال خارجي). <code>favicon.svg</code> أيقونة التبويب.</td></tr>
+<tr><td><code>server/worker.js</code></td><td>كل منطق الخادم: تسجيل الدخول، الصلاحيات، الواجهات البرمجية، الاتصال بـ Firebase، الأمان.</td></tr>
+<tr><td><code>server/schema.sql</code></td><td>جداول قاعدة البيانات واللائحة الافتراضية.</td></tr>
+<tr><td><code>server/wrangler.toml</code></td><td>إعداد النشر وربط القاعدة (بلا أسرار).</td></tr>
+<tr><td><code>server/test.mjs</code></td><td>29 اختبار أمان ووظائف (الصلاحيات، حقن SQL، الأقفال، التقارير).</td></tr>
+<tr><td><code>server/start-local.bat</code> و<code>local-setup.mjs</code></td><td>تشغيل تجريبي بنقرة واحدة على جهازك (يجهّز القاعدة والحسابات).</td></tr>
+<tr><td><code>server/teachers.txt</code></td><td>قائمة الـ47 معلماً للصقها في لوحة الإدارة.</td></tr>
+</table>
+
+<h3>الميزات (مطابقة للنموذج الذي أرسلته)</h3>
+<ul>
+  <li><b>بوابة المعلمين:</b> دخول بحساب خاص لكل معلم، رصد (حاضر/غائب/متأخر + عذر) لحصة وصف وتاريخ، التقرير اليومي للغائبين، إحصائيات ونسب المعلمين الأسبوعية، مزامنة تلقائية إن رصد معلم آخر الحصة نفسها.</li>
+  <li><b>لوحة الإدارة:</b> التقرير الشهري (5 أيام فأكثر) مع لائحة الإجراءات الملوّنة وحذف تواريخ الغياب، إضافة صف أساسي أو مادة متنقلة، إضافة طلاب لصف قائم، حذف الصفوف والطلاب، إدارة المعلمين (إضافة جماعية، بحث، كلمة مرور جديدة، حذف)، حذف سجل حصة، تعديل بيانات المدرسة واللائحة، سجل عمليات.</li>
+  <li><b>الفئات:</b> «الصفوف الأساسية» و«المواد المتنقلة»؛ ويرتبط الطالب بالاثنين برقمه فتُحسب غيابات المادة المتنقلة على صفه الأساسي.</li>
+</ul>
+
+<h3>لماذا لا يمكن اختراقه بالطرق الشائعة</h3>
+<table>
+<tr><th>الخطر</th><th>ما يمنعه</th></tr>
+<tr><td>وصول الإنترنت إلى قاعدة البيانات</td><td>قاعدة D1 ليس لها أي عنوان عام. لا يصل إليها إلا <code>worker.js</code> عبر ربط داخلي. المتصفح لا يتصل بالقاعدة ولا بـ Firebase أبداً، بل بالخادم فقط.</td></tr>
+<tr><td>حقن SQL</td><td>كل استعلام نصه ثابت وقيمه تُمرَّر عبر <code>bind()</code>، والإدخالات تُفحص بصيغ صارمة (أرقام وتواريخ وقوائم محددة). اختبار آلي يفحص الكود ويرفض أي دمج نصوص في SQL، واختبارات تجرّب حمولات حقن حقيقية.</td></tr>
+<tr><td>XSS (حقن سكربتات)</td><td>الواجهة لا تستخدم HTML خام إطلاقاً (نصوص فقط)، وسياسة CSP صارمة تمنع أي سكربت أو نمط مضمّن، وهذا مفحوص باختبار.</td></tr>
+<tr><td>دخول معلم للوحة الإدارة</td><td>الصلاحية تُفحص في الخادم لكل طلب (وليس في الواجهة فقط): كل مسار <code>/api/admin/*</code> يرفض غير الإدارة بـ403، واختبار يجرّب كل المسارات بحساب معلم. بوابة المعلم لا تقبل حساب الإدارة والعكس.</td></tr>
+<tr><td>سرقة الجلسة / CSRF</td><td>ملف ارتباط HttpOnly وSecure وSameSite=Strict، والقاعدة تحفظ بصمة SHA-256 فقط، وتُفحص ترويسة Origin لكل طلب تغيير.</td></tr>
+<tr><td>تخمين كلمات المرور</td><td>حد للمحاولات لكل مستخدم وعنوان، وTurnstile اختياري، وحماية Firebase الداخلية.</td></tr>
+<tr><td>تسريب الأسرار</td><td>مفتاح Firebase وحساب الخدمة أسرار في Cloudflare فقط ولا تُكتب في الملفات ولا تصل للمتصفح.</td></tr>
+</table>
+
+<h2>10) حدود يجب أن تعرفها بصدق</h2>
+<ul>
+  <li>أجريت الاختبارات الكاملة محلياً (29 اختباراً + تشغيل الموقع في محاكي Cloudflare وتجربة المتصفح)، لكن <b>لم يُختبر الاتصال بـ Firebase وCloudflare الحقيقيين</b> لأن ذلك يحتاج حساباتك. شكل طلبات Firebase مطابق للوثائق واختُبر بطلبات وهمية، فإن ظهر خطأ عند أول تشغيل فهو غالباً في الإعداد (راجع القسم 11).</li>
+  <li>الحدود المجانية لدى Cloudflare وFirebase كبيرة لمدرسة واحدة بكثير، لكنها قد تتغير؛ راجع صفحات الأسعار الحالية قبل الاعتماد عليها.</li>
+  <li>حسابات المعلمين تستخدم بريداً وهمياً (<code>t01@school.example</code>) داخل Firebase، لذلك <b>لا توجد خاصية «نسيت كلمة المرور» بالبريد</b>؛ الإدارة تعيد تعيينها.</li>
+  <li>المعلم لا يعدّل رصداً بعد حفظه (لمنع التلاعب)؛ تحذف الإدارة سجل الحصة فيعيد المعلم رصدها.</li>
+  <li>يظهر التقرير اليومي والإحصائيات الأسبوعية في بوابة المعلمين كما في النموذج الذي أرسلته (قراءة فقط). أما التقرير الشهري والإدارة فللإدارة وحدها.</li>
+  <li>يستطيع المعلم تسجيل غياب حتى 14 يوماً سابقة، ولا يستطيع تسجيل يوم عطلة (الجمعة والسبت) أو تاريخ مستقبلي. تغيير ذلك من أعلى <code>worker.js</code> (قسم CONFIG).</li>
+</ul>
+
+<h2>11) حلّ المشكلات</h2>
+<table>
+<tr><th>المشكلة</th><th>الحل</th></tr>
+<tr><td>«بيانات الدخول غير صحيحة» للإدارة</td><td>تأكد أن مستخدم Firebase بريده بالضبط <code>admin@school.example</code>، وأن Email/Password مفعّل، وأن كلمة المرور صحيحة.</td></tr>
+<tr><td>«الخادم غير متصل»</td><td>الصفحة فُتحت بلا خادم. استخدم <code>start-local.bat</code> أو الرابط المنشور.</td></tr>
+<tr><td>«يوجد أكثر من معلم بهذا الاسم»</td><td>على المعلم كتابة اسمه كاملاً أو اسم المستخدم المطبوع في بطاقته (t01 …).</td></tr>
+<tr><td>«هذا الحساب لا يملك صلاحية الإدارة»</td><td>قيمة <code>ADMIN_UIDS</code> لا تطابق User UID في Firebase. أعد تنفيذ <code>secret put ADMIN_UIDS</code> ثم <code>npm run deploy</code>.</td></tr>
+<tr><td>«إعداد Firebase غير مكتمل» أو خطأ 500</td><td>سرّ <code>FIREBASE_SERVICE_ACCOUNT</code> لم يُلصق كاملاً. أعد وضعه بالأمر في الخطوة 3.</td></tr>
+<tr><td>«تعذّر إنشاء حساب» عند إضافة المعلمين</td><td>تأكد من تفعيل Email/Password، ومن أن حساب الخدمة من نفس مشروع Firebase. وإن رفض Firebase النطاق الوهمي فغيّر <code>EMAIL_DOMAIN</code> في أعلى <code>worker.js</code> إلى أي نطاق صالح الشكل ثم انشر من جديد.</td></tr>
+<tr><td>الموقع القديم يظهر بعد التحديث</td><td>حدّث الصفحة بقوة (Ctrl+F5).</td></tr>
+</table>
+</body>
+</html>

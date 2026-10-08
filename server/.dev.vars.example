@@ -1,0 +1,12 @@
+# للتجربة على جهازك فقط: انسخ هذا الملف باسم .dev.vars (لا ترفعه لأي مكان).
+# هذا الوضع يعمل على localhost فقط ولا يتصل بـ Firebase الحقيقي.
+DEV_FAKE_AUTH=1
+DEV_ADMIN_EMAIL=admin@school.example
+DEV_ADMIN_PASSWORD=ChangeMe-Admin-123
+ADMIN_UIDS=dev-admin
+
+# تسجيل الدخول الرسمي بواسطة Google (Google Official OAuth 2.0)
+# أنشئها من: https://console.cloud.google.com/apis/credentials
+# واضبط Authorized redirect URI إلى: http://localhost:8787/api/auth/google/callback
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
