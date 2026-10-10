@@ -1317,13 +1317,14 @@
     var teachersRoster = [];
 
     // 1) بطاقة التحكم بكلمة مرور المعلمين
-    function paintTeacherPwControl() {
+    function paintTeacherPwControl(explicitPw) {
       mount(pwCard, skeleton(3));
-      get('/api/admin/passwords').then(function (res) {
-        var pw = res.teacher_password || '';
-        var isMasked = true;
-        var pwSpan = h('span', { class: 'pw-val', text: '••••••••••••' });
-        var toggleMaskBtn = btn('إظهار', { sm: true, ic: 'eye', on: function () {
+      var fetchP = explicitPw ? Promise.resolve({ teacher_password: explicitPw }) : get('/api/admin/passwords');
+      fetchP.then(function (res) {
+        var pw = (res && res.teacher_password) || explicitPw || '';
+        var isMasked = !explicitPw;
+        var pwSpan = h('span', { class: 'pw-val', text: isMasked ? '••••••••••••' : pw });
+        var toggleMaskBtn = btn(isMasked ? 'إظهار' : 'إخفاء', { sm: true, ic: 'eye', on: function () {
           isMasked = !isMasked;
           pwSpan.textContent = isMasked ? '••••••••••••' : pw;
           toggleMaskBtn.textContent = isMasked ? 'إظهار' : 'إخفاء';
@@ -1338,20 +1339,20 @@
             busy(genBtn, function () { return put('/api/admin/passwords/teacher', { generate: true }); })
               .then(function (upRes) {
                 toast('تم توليد وتحديث كلمة المرور للمعلمين بنجاح');
-                paintTeacherPwControl();
+                paintTeacherPwControl(upRes.teacher_password);
               }).catch(fail);
           });
         } });
 
-        var customPwIn = h('input', { type: 'text', dir: 'ltr', placeholder: 'اكتب كلمة مرور مخصصة (6 أحرف فأكثر)…' });
+        var customPwIn = h('input', { type: 'text', dir: 'ltr', placeholder: 'اكتب كلمة مرور مخصصة (4 أحرف فأكثر)…' });
         var saveCustomBtn = btn('حفظ المخصصة', { sm: true, on: function () {
           var val = customPwIn.value.trim();
           if (val.length < 4) return toast('كلمة المرور يجب ألا تقل عن 4 أحرف', true);
           busy(saveCustomBtn, function () { return put('/api/admin/passwords/teacher', { password: val }); })
-            .then(function () {
-              toast('تم تحديث كلمة مرور المعلمين بنجاح');
+            .then(function (upRes) {
+              toast('تم تحديث كلمة مرور المعلمين بنجاح: ' + val);
               customPwIn.value = '';
-              paintTeacherPwControl();
+              paintTeacherPwControl(upRes && upRes.teacher_password ? upRes.teacher_password : val);
             }).catch(fail);
         } });
 

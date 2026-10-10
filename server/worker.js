@@ -238,14 +238,18 @@ export function realFirebase() { return {}; }
 
 const ensuredDbs = new WeakSet();
 export async function ensurePasswords(db, env = {}) {
-  // تهيئة كلمة مرور المعلمين إذا لم تكن موجودة
+  // تهيئة كلمة مرور المعلمين (teacher@77 افتراضياً أو من المتغيرات)
+  const plainRow = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_plain'");
+  const currentPlain = plainRow?.value;
+  const isOldDefault = currentPlain === 'tchr-salem-2026';
+  const targetTeacherPw = (env.TEACHER_PASSWORD || (typeof process !== 'undefined' && process.env?.TEACHER_PASSWORD))
+    || (isOldDefault ? 'teacher@77' : (currentPlain || 'teacher@77'));
+
   const tHash = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_hash'");
-  if (!tHash) {
-    const plainRow = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_plain'");
-    const initialTeacherPw = plainRow?.value || 'tchr-salem-2026';
-    const hashed = await pbkdf2Hash(initialTeacherPw);
+  if (!tHash || isOldDefault || (currentPlain !== targetTeacherPw)) {
+    const hashed = await pbkdf2Hash(targetTeacherPw);
     await db.batch([
-      st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_plain', ?1)", initialTeacherPw),
+      st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_plain', ?1)", targetTeacherPw),
       st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_hash', ?1)", hashed.hashHex),
       st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_salt', ?1)", hashed.saltHex),
     ]);
@@ -386,13 +390,7 @@ async function login(ctx) {
   const name = gate === 'admin' ? 'الإدارة' : 'المعلم';
   const expiresAt = nowS + CONFIG.SESSION_HOURS * 3600;
 
-  let currentPwKey = '';
-  try {
-    currentPwKey = role === 'admin'
-      ? (env.DEV_ADMIN_PASSWORD || env.ADMIN_PASSWORD || 'Boss-Pass-123')
-      : (await getTeacherPasswordPlain(db));
-  } catch {}
-  const sessionSecret = `${env.SESSION_SECRET || 'school-hafth-session-2026'}:${currentPwKey}`;
+  const sessionSecret = env.SESSION_SECRET || 'school-hafth-session-2026';
   const token = await createSignedSessionToken(gate, role, expiresAt, sessionSecret);
   const tokenId = await sha256(token);
 
@@ -412,7 +410,7 @@ async function login(ctx) {
 
 async function getTeacherPasswordPlain(db) {
   const row = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_plain'");
-  return row?.value || 'tchr-salem-2026';
+  return row?.value || 'teacher@77';
 }
 
 async function loadSession(ctx) {
@@ -428,6 +426,21 @@ async function loadSession(ctx) {
   } catch {}
 
   // Check in local auth_sessions
+  const parts = token.split('.');
+  if (parts.length === 5) {
+    const expiresAt = Number(parts[2]);
+    const tokenCreatedAt = expiresAt - CONFIG.SESSION_HOURS * 3600;
+    const role = parts[1];
+    try {
+      const pwChangedRow = await one(ctx.db,
+        "SELECT value FROM settings WHERE key = ?1",
+        role === 'admin' ? 'admin_pw_changed_at' : 'teacher_pw_changed_at');
+      if (pwChangedRow && Number(pwChangedRow.value) > tokenCreatedAt) {
+        return null; // Session was created before the password change!
+      }
+    } catch {}
+  }
+
   try {
     const s = await one(ctx.db,
       'SELECT id, uid, role, expires_at FROM auth_sessions WHERE id = ?1 AND expires_at > ?2',
@@ -439,17 +452,9 @@ async function loadSession(ctx) {
   } catch {}
 
   // If not found in local auth_sessions (e.g. fresh lambda worker instance):
-  // Verify token signature against current password
-  const parts = token.split('.');
+  // Verify token signature against stable session secret
   if (parts.length === 5) {
-    const role = parts[1];
-    let currentPwKey = '';
-    try {
-      currentPwKey = role === 'admin'
-        ? (ctx.env.DEV_ADMIN_PASSWORD || ctx.env.ADMIN_PASSWORD || 'Boss-Pass-123')
-        : (await getTeacherPasswordPlain(ctx.db));
-    } catch {}
-    const sessionSecret = `${ctx.env.SESSION_SECRET || 'school-hafth-session-2026'}:${currentPwKey}`;
+    const sessionSecret = ctx.env.SESSION_SECRET || 'school-hafth-session-2026';
     const signed = await verifySignedSessionToken(token, nowS, sessionSecret);
     if (signed) {
       // Re-populate session in this container's SQLite DB
@@ -796,7 +801,7 @@ async function removeStudent({ db, params, user }) {
 async function getAdminPasswords({ db }) {
   let plainRow = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_plain'");
   if (!plainRow) {
-    const def = 'tchr-salem-2026';
+    const def = 'teacher@77';
     const hashed = await pbkdf2Hash(def);
     await db.batch([
       st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_plain', ?1)", def),
@@ -817,10 +822,12 @@ async function updateTeacherPassword({ db, body, user }) {
   }
 
   const hashed = await pbkdf2Hash(nextPw);
+  const nowS = Math.floor(Date.now() / 1000);
   await db.batch([
     st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_plain', ?1)", nextPw),
     st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_hash', ?1)", hashed.hashHex),
     st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_password_salt', ?1)", hashed.saltHex),
+    st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('teacher_pw_changed_at', ?1)", String(nowS)),
     st(db, "DELETE FROM auth_sessions WHERE role = 'teacher'"), // إنهاء جلسات المعلمين الحالية فوراً
     auditStmt(db, user.name, 'password.teacher_change', { generated: !!body.generate }),
   ]);
@@ -842,9 +849,11 @@ async function updateAdminPassword({ db, body, user }) {
   if (!verified) throw new HttpError(401, 'كلمة المرور الحالية غير صحيحة');
 
   const hashed = await pbkdf2Hash(next);
+  const nowS = Math.floor(Date.now() / 1000);
   await db.batch([
     st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_hash', ?1)", hashed.hashHex),
     st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_salt', ?1)", hashed.saltHex),
+    st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_pw_changed_at', ?1)", String(nowS)),
     st(db, 'DELETE FROM auth_sessions WHERE role = ?1 AND id <> ?2', 'admin', user.tokenId),
     auditStmt(db, user.name, 'password.admin_change', {}),
   ]);

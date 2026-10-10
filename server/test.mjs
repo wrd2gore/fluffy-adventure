@@ -83,7 +83,7 @@ function world(extraEnv = {}, clock = { t: NOW }) {
   }
 
   async function teacher() {
-    const { r, cookie } = await login('teacher', 'tchr-salem-2026');
+    const { r, cookie } = await login('teacher', 'teacher@77');
     assert.equal(r.status, 200, r.text);
     return cookie;
   }
@@ -166,7 +166,7 @@ test('الدخول بكلمة المرور فقط: المعلم يدخل بكل�
   const w = world();
 
   // دخول المعلم بكلمة المرور فقط
-  const tLog = await w.login('teacher', 'tchr-salem-2026');
+  const tLog = await w.login('teacher', 'teacher@77');
   assert.equal(tLog.r.status, 200);
   assert.equal(tLog.r.data.role, 'teacher');
   assert.equal(tLog.r.data.name, 'المعلم');
@@ -178,7 +178,7 @@ test('الدخول بكلمة المرور فقط: المعلم يدخل بكل�
   assert.equal(aLog.r.data.name, 'الإدارة');
 
   // كلمة المعلمين تُرفض في بوابة الإدارة
-  assert.equal((await w.login('admin', 'tchr-salem-2026')).r.status, 401);
+  assert.equal((await w.login('admin', 'teacher@77')).r.status, 401);
 
   // كلمة الإدارة تُرفض في بوابة المعلمين
   assert.equal((await w.login('teacher', 'Boss-Pass-123')).r.status, 401);
@@ -220,7 +220,7 @@ test('تحكم الإدارة بكلمة مرور المعلمين: عرض، ت�
   // 1. استرجاع كلمة المرور الحالية للمعلمين
   const curRes = await w.call('GET', '/api/admin/passwords', { cookie: a });
   assert.equal(curRes.status, 200);
-  assert.equal(curRes.data.teacher_password, 'tchr-salem-2026');
+  assert.equal(curRes.data.teacher_password, 'teacher@77');
 
   // 2. جلسة معلم تعمل بكلمة المرور الحالية
   const tCookie = await w.teacher();
@@ -236,7 +236,7 @@ test('تحكم الإدارة بكلمة مرور المعلمين: عرض، ت�
   assert.equal((await w.call('GET', '/api/me', { cookie: tCookie })).status, 401, 'يجب إبطال الجلسة القديمة للمعلم');
 
   // 5. كلمة المرور القديمة لم تعد تعمل
-  assert.equal((await w.login('teacher', 'tchr-salem-2026')).r.status, 401);
+  assert.equal((await w.login('teacher', 'teacher@77')).r.status, 401);
 
   // 6. كلمة المرور الجديدة العشوائية تعمل بنجاح
   const tNewLogin = await w.login('teacher', newPass);
@@ -317,12 +317,12 @@ test('الحد من تخمين كلمات المرور (لكل عنوان IP و�
   }
 
   // المحاولة التالية تُحظر بـ 429 حتى لو كانت كلمة المرور صحيحة
-  const blocked = await w.login('teacher', 'tchr-salem-2026');
+  const blocked = await w.login('teacher', 'teacher@77');
   assert.equal(blocked.r.status, 429);
 
   // بعد انقضاء نافذة الحظر، يعود الدخول بشكل طبيعي
   w.clock.t = new Date(NOW.getTime() + (CONFIG.LOGIN_WINDOW_MIN * 60 + 5) * 1000);
-  const unblocked = await w.login('teacher', 'tchr-salem-2026');
+  const unblocked = await w.login('teacher', 'teacher@77');
   assert.equal(unblocked.r.status, 200);
 });
 

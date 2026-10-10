@@ -18,7 +18,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('school_name',           'مدرسة حفص بن راشد'),
   ('principal_name',        'الأستاذ طلال الهنائي'),
   ('developer_credit',      'الأستاذ منير الصالحي'),
-  ('teacher_password_plain', 'tchr-salem-2026');
+  ('teacher_password_plain', 'teacher@77');
 
 CREATE TABLE IF NOT EXISTS rules (
   id       INTEGER PRIMARY KEY,
@@ -147,7 +147,16 @@ function getDb() {
       UPDATE settings SET value = 'مدرسة حفص بن راشد' WHERE key = 'school_name';
       UPDATE settings SET value = 'الأستاذ طلال الهنائي' WHERE key = 'principal_name';
       DELETE FROM teachers WHERE created_at = 1700000000000;
+      UPDATE settings SET value = 'teacher@77' WHERE key = 'teacher_password_plain' AND value = 'tchr-salem-2026';
     `);
+    const plainPw = raw.prepare("SELECT value FROM settings WHERE key = 'teacher_password_plain'").all()[0]?.value;
+    if (plainPw === 'teacher@77') {
+      // Ensure hash is re-computed for teacher@77
+      const tHash = raw.prepare("SELECT value FROM settings WHERE key = 'teacher_password_hash'").all()[0]?.value;
+      if (!tHash) {
+        raw.exec("DELETE FROM settings WHERE key IN ('teacher_password_hash', 'teacher_password_salt')");
+      }
+    }
   } catch {}
 
   // Auto-seed all 30 classes and 893 students if not already present or if using old number format
@@ -181,8 +190,10 @@ export default async function handler(req, res) {
     const db = getDb();
     const env = {
       DB: db,
-      DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || 'Boss-Pass-123',
+      DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'Boss-Pass-123',
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'Boss-Pass-123',
+      TEACHER_PASSWORD: process.env.TEACHER_PASSWORD || 'teacher@77',
+      SESSION_SECRET: process.env.SESSION_SECRET || 'school-hafth-session-2026',
     };
 
     // Vercel Web Standard / Edge Request

@@ -12,7 +12,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('school_name',           'مدرسة حفص بن راشد'),
   ('principal_name',        'الأستاذ طلال الهنائي'),
   ('developer_credit',      'الأستاذ منير الصالحي'),
-  ('teacher_password_plain', 'tchr-salem-2026');
+  ('teacher_password_plain', 'teacher@77');
 
 -- لائحة الإجراءات حسب عدد أيام الغياب في الشهر (تُعدَّل من لوحة الإدارة)
 CREATE TABLE IF NOT EXISTS rules (
