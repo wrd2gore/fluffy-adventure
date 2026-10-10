@@ -62,7 +62,8 @@
     fileText: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
     info: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-5h2v2h-2v-2zm0-8h2v6h-2V7z',
     eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zm11 5a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
-    edit: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'
+    edit: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+    lock: 'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2Zm-7 6a2 2 0 1 1 2-2 2 2 0 0 1-2 2Zm5-6V7a5 5 0 0 0-10 0v4Z'
   };
 
   function icon(name) {
@@ -280,10 +281,10 @@
       label: 'التقارير والإحصائيات',
       shortLabel: 'التقارير',
       icon: 'book',
-      defaultTab: 'monthly',
+      defaultTab: 'daily',
       tabs: [
-        ['monthly', 'التقرير الشهري', 'book'],
         ['daily', 'التقرير اليومي', 'book'],
+        ['monthly', 'التقرير الشهري', 'book'],
         ['weekly', 'إحصائيات المعلمين', 'users']
       ]
     },
@@ -404,6 +405,111 @@
       ]);
       setTimeout(function () { nameIn.focus(); }, 60);
     }).catch(fail);
+  }
+
+  // نافذة تغيير كلمة مرور لوحة الإدارة
+  function openAdminPasswordModal() {
+    var curIn = h('input', {
+      type: 'password',
+      dir: 'ltr',
+      required: true,
+      autocomplete: 'current-password',
+      placeholder: 'أدخل كلمة المرور الحالية للإدارة'
+    });
+    var newIn = h('input', {
+      type: 'password',
+      dir: 'ltr',
+      required: true,
+      minlength: '6',
+      autocomplete: 'new-password',
+      placeholder: 'أدخل كلمة المرور الجديدة (6 أحرف فأكثر)'
+    });
+    var confirmIn = h('input', {
+      type: 'password',
+      dir: 'ltr',
+      required: true,
+      minlength: '6',
+      autocomplete: 'new-password',
+      placeholder: 'أعد إدخال كلمة المرور الجديدة للتأكيد'
+    });
+
+    var errMsg = h('div', { class: 'err', hidden: true });
+
+    function rowWithEye(inputEl) {
+      var eyeBtn = h('button', {
+        type: 'button',
+        class: 'btn icon-btn',
+        title: 'إظهار / إخفاء',
+        'aria-label': 'إظهار أو إخفاء كلمة المرور',
+        onclick: function () {
+          inputEl.type = inputEl.type === 'text' ? 'password' : 'text';
+        }
+      }, icon('eye'));
+      return h('div', { class: 'pw-input-wrap' }, inputEl, eyeBtn);
+    }
+
+    var box;
+    var saveBtn = btn('تحديث كلمة المرور', {
+      kind: 'primary',
+      ic: 'check',
+      on: function () {
+        errMsg.hidden = true;
+        errMsg.textContent = '';
+        var c = curIn.value.trim();
+        var n = newIn.value.trim();
+        var cf = confirmIn.value.trim();
+        if (!c) {
+          errMsg.textContent = 'يرجى إدخال كلمة المرور الحالية للإدارة أولاً';
+          errMsg.hidden = false;
+          curIn.focus();
+          return;
+        }
+        if (n.length < 6) {
+          errMsg.textContent = 'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف';
+          errMsg.hidden = false;
+          newIn.focus();
+          return;
+        }
+        if (n === c) {
+          errMsg.textContent = 'كلمة المرور الجديدة يجب أن تختلف عن كلمة المرور الحالية';
+          errMsg.hidden = false;
+          newIn.focus();
+          return;
+        }
+        if (n !== cf) {
+          errMsg.textContent = 'كلمتا المرور الجديدتان غير متطابقتين';
+          errMsg.hidden = false;
+          confirmIn.focus();
+          return;
+        }
+
+        busy(saveBtn, function () {
+          return put('/api/admin/passwords/admin', { current: c, next: n });
+        }).then(function () {
+          toast('تم تحديث كلمة مرور الإدارة بنجاح وبأمان تام');
+          box.close();
+        }).catch(function (err) {
+          errMsg.textContent = err.message || 'فشل تحديث كلمة المرور. تأكد من صحة كلمة المرور الحالية.';
+          errMsg.hidden = false;
+        });
+      }
+    });
+
+    box = overlay([
+      h('div', { class: 'pw-modal-header' },
+        icon('lock'),
+        h('h3', { text: 'تغيير كلمة مرور لوحة الإدارة' })),
+      h('p', { class: 'muted small', text: 'لحماية لوحة إدارة المدرسة، يتم التحقق المشفر في الخادم من كلمة المرور الحالية أولاً، ثم تُشفر الكلمة الجديدة بـ 100,000 دورة PBKDF2 لحمايتها ضد أي اختراق.' }),
+      errMsg,
+      h('div', { class: 'stack' },
+        field('كلمة المرور الحالية للإدارة', rowWithEye(curIn), 'أدخل الكلمة الحالية لتأكيد هويتك'),
+        field('كلمة المرور الجديدة', rowWithEye(newIn), 'يجب ألا تقل عن 6 أحرف'),
+        field('تأكيد كلمة المرور الجديدة', rowWithEye(confirmIn), 'أعد إدخال الكلمة للتأكد من مطابقتها')),
+      h('div', { class: 'acts' },
+        btn('إلغاء', { on: function () { box.close(); } }),
+        saveBtn)
+    ]);
+    setTimeout(function () { curIn.focus(); }, 60);
   }
 
   function render() {
@@ -593,7 +699,13 @@
       userBadge = h('div', { class: 'who-chip' },
         icon('shieldCheck'),
         h('b', { text: 'إدارة المدرسة' }),
-        h('span', { class: 'small muted', text: '(تحكم كامل)' }));
+        h('span', { class: 'small muted', text: '(تحكم كامل)' }),
+        btn('تغيير كلمة المرور', {
+          sm: true,
+          ic: 'lock',
+          title: 'تغيير كلمة مرور الإدارة',
+          on: openAdminPasswordModal
+        }));
     } else {
       var curTeacherName = S.selectedTeacher || 'اختر اسم المعلم';
       var isChosen = !!S.selectedTeacher;
@@ -615,6 +727,13 @@
           h('span', { text: S.pub.school_name || 'رصد الغياب' })),
         userBadge,
         h('div', { class: 'topbar-btns' },
+          isAdmin && h('button', {
+            type: 'button',
+            class: 'btn icon-btn',
+            title: 'تغيير كلمة مرور الإدارة',
+            'aria-label': 'تغيير كلمة مرور الإدارة',
+            onclick: openAdminPasswordModal
+          }, icon('lock')),
           themeButton(),
           logoutBtn))),
       h('nav', { class: 'tabbar', role: 'tablist', 'aria-label': 'التنقل الرئيسي' }, navItems));
@@ -909,7 +1028,14 @@
         var headRow = h('tr', null, h('th', { text: 'م' }), h('th', { text: 'الرقم' }), h('th', { text: 'اسم الطالب' }));
         for (var p = 1; p <= r.periods_count; p++) {
           var tchr = r.teachers_by_period[p];
-          headRow.append(h('th', { title: tchr ? ('رصد: ' + tchr) : 'لم ترصد' }, 'ح' + p, tchr && h('small', { class: 'muted block' }, tchr)));
+          headRow.append(h('th', { class: 'period-th' + (tchr ? ' has-teacher' : ''), title: tchr ? ('رصد: ' + tchr) : 'لم ترصد' },
+            h('div', { class: 'period-th-wrap' },
+              tchr
+                ? h('span', { class: 'period-th-teacher', text: tchr, title: tchr })
+                : h('span', { class: 'period-th-empty' }),
+              h('span', { class: 'period-th-num', text: 'ح' + p })
+            )
+          ));
         }
         headRow.append(h('th', { text: 'المواد المتنقلة' }));
         t.append(h('thead', null, headRow));
@@ -1198,25 +1324,40 @@
       var confirmIn = h('input', { type: 'password', dir: 'ltr', required: true, minlength: '6', autocomplete: 'new-password', placeholder: 'أعد إدخال كلمة المرور الجديدة' });
       var saveBtn = btn('تحديث كلمة مرور الإدارة', { kind: 'primary', ic: 'check' });
 
+      function rowWithEye(inputEl) {
+        var eyeBtn = h('button', {
+          type: 'button',
+          class: 'btn icon-btn',
+          title: 'إظهار / إخفاء',
+          'aria-label': 'إظهار أو إخفاء كلمة المرور',
+          onclick: function () {
+            inputEl.type = inputEl.type === 'text' ? 'password' : 'text';
+          }
+        }, icon('eye'));
+        return h('div', { class: 'pw-input-wrap' }, inputEl, eyeBtn);
+      }
+
       saveBtn.onclick = function () {
         var c = curIn.value.trim(); var n = newIn.value.trim(); var cf = confirmIn.value.trim();
         if (!c) return toast('اكتب كلمة المرور الحالية', true);
         if (n.length < 6) return toast('كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف', true);
+        if (n === c) return toast('كلمة المرور الجديدة يجب أن تختلف عن الحالية', true);
         if (n !== cf) return toast('كلمتا المرور الجديدتان غير متطابقتين', true);
         busy(saveBtn, function () { return put('/api/admin/passwords/admin', { current: c, next: n }); })
           .then(function () {
-            toast('تم تحديث كلمة مرور الإدارة بنجاح');
+            toast('تم تحديث كلمة مرور الإدارة بنجاح وبأمان تام');
             curIn.value = ''; newIn.value = ''; confirmIn.value = '';
           }).catch(fail);
       };
 
       mount(adminPwCard,
         h('h2', { text: 'تغيير كلمة مرور لوحة الإدارة' }),
+        h('p', { class: 'muted small', text: 'يتم التحقق المشفر من كلمة المرور الحالية في الخادم، وتُشفر الكلمة الجديدة فوراً بأعلى معايير الأمان (PBKDF2).' }),
         h('div', { class: 'stack' },
-          field('كلمة المرور الحالية', curIn),
+          field('كلمة المرور الحالية', rowWithEye(curIn)),
           h('div', { class: 'grid' },
-            field('كلمة المرور الجديدة', newIn),
-            field('تأكيد كلمة المرور الجديدة', confirmIn)),
+            field('كلمة المرور الجديدة', rowWithEye(newIn)),
+            field('تأكيد كلمة المرور الجديدة', rowWithEye(confirmIn))),
           h('div', { class: 'row end' }, saveBtn)));
     }
 
@@ -1370,6 +1511,17 @@
       }).catch(fail);
     } });
     host.append(
+      h('div', { class: 'card' },
+        h('div', { class: 'row between' },
+          h('h2', { text: 'أمان لوحة الإدارة وكلمة المرور' }),
+          icon('lock')),
+        h('p', { class: 'muted small', text: 'يمكنك تغيير وتحديث كلمة مرور لوحة إدارة المدرسة في أي وقت بأمان تام وتشفير PBKDF2 عالي الحماية.' }),
+        h('div', { class: 'row' },
+          btn('تغيير كلمة مرور الإدارة الآن', {
+            kind: 'primary',
+            ic: 'lock',
+            on: openAdminPasswordModal
+          }))),
       h('div', { class: 'card' }, h('h2', { text: 'بيانات المدرسة' }), h('div', { class: 'stack' }, field('اسم المدرسة', school), field('مدير المدرسة', principal), field('حقوق التطوير والبرمجة', dev), h('div', { class: 'row end' }, saveInfo))),
       h('div', { class: 'card' }, h('h2', { text: 'لائحة الإجراءات حسب أيام الغياب' }), h('p', { class: 'muted small', text: 'يُطبَّق أعلى إجراء بلغه الطالب خلال الشهر. أقل رقم هنا هو حد ظهور الطالب في التقرير الشهري.' }), rulesBox,
         h('div', { class: 'row' }, btn('إضافة قاعدة', { sm: true, ic: 'plus', on: function () { rules.push({ min_days: 1, label: '', color: '#06b6d4' }); paintRules(); } }), saveRules)),
