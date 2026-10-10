@@ -255,11 +255,20 @@ export async function ensurePasswords(db, env = {}) {
     ]);
   }
 
-  // تهيئة كلمة مرور الإدارة إذا لم تكن موجودة
+  // تهيئة كلمة مرور الإدارة (Tal@al11 افتراضياً)
   const aHash = await one(db, "SELECT value FROM settings WHERE key = 'admin_password_hash'");
-  if (!aHash) {
-    const initialAdminPw = env.DEV_ADMIN_PASSWORD || env.ADMIN_PASSWORD || 'Boss-Pass-123';
-    const hashed = await pbkdf2Hash(initialAdminPw);
+  const aSalt = await one(db, "SELECT value FROM settings WHERE key = 'admin_password_salt'");
+  const targetAdminPw = env.ADMIN_PASSWORD || env.DEV_ADMIN_PASSWORD || (typeof process !== 'undefined' && (process.env?.ADMIN_PASSWORD || process.env?.DEV_ADMIN_PASSWORD)) || 'Tal@al11';
+
+  let isOldBossPass = false;
+  if (aHash && aSalt) {
+    try {
+      isOldBossPass = await verifyPassword('Boss-Pass-123', aHash.value, aSalt.value);
+    } catch {}
+  }
+
+  if (!aHash || isOldBossPass) {
+    const hashed = await pbkdf2Hash(targetAdminPw);
     await db.batch([
       st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_hash', ?1)", hashed.hashHex),
       st(db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password_salt', ?1)", hashed.saltHex),

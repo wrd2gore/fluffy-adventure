@@ -190,8 +190,8 @@ export default async function handler(req, res) {
     const db = getDb();
     const env = {
       DB: db,
-      DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'Boss-Pass-123',
-      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'Boss-Pass-123',
+      DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'Tal@al11',
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'Tal@al11',
       TEACHER_PASSWORD: process.env.TEACHER_PASSWORD || 'teacher@77',
       SESSION_SECRET: process.env.SESSION_SECRET || 'school-hafth-session-2026',
     };

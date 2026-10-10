@@ -52,7 +52,7 @@ function world(extraEnv = {}, clock = { t: NOW }) {
   const env = {
     DB,
     ASSETS: { fetch: async () => new Response('<!doctype html><title>x</title>', { headers: { 'Content-Type': 'text/html' } }) },
-    DEV_ADMIN_PASSWORD: 'Boss-Pass-123',
+    DEV_ADMIN_PASSWORD: 'Tal@al11',
     ...extraEnv,
   };
   const app = createApp({ now: () => clock.t });
@@ -77,7 +77,7 @@ function world(extraEnv = {}, clock = { t: NOW }) {
   }
 
   async function admin() {
-    const { r, cookie } = await login('admin', 'Boss-Pass-123');
+    const { r, cookie } = await login('admin', 'Tal@al11');
     assert.equal(r.status, 200, r.text);
     return cookie;
   }
@@ -126,7 +126,7 @@ test('ترويسات الأمان على الواجهة البرمجية وعل�
 
 test('CSRF: يُرفض أي تغيير بلا Origin صحيح أو بنوع محتوى غير JSON', async () => {
   const w = world();
-  const body = { gate: 'admin', password: 'Boss-Pass-123' };
+  const body = { gate: 'admin', password: 'Tal@al11' };
   assert.equal((await w.call('POST', '/api/login', { body, origin: null })).status, 403);
   assert.equal((await w.call('POST', '/api/login', { body, origin: 'https://evil.test' })).status, 403);
   assert.equal((await w.call('POST', '/api/login', { raw: 'a=b', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).status, 415);
@@ -138,7 +138,7 @@ test('CSRF: يُرفض أي تغيير بلا Origin صحيح أو بنوع مح
 
 test('الجلسة: ملف ارتباط محمي، والقاعدة تحفظ البصمة فقط، والخروج يلغيها', async () => {
   const w = world();
-  const { r, cookie } = await w.login('admin', 'Boss-Pass-123');
+  const { r, cookie } = await w.login('admin', 'Tal@al11');
   const sc = r.headers.get('Set-Cookie');
   assert.match(sc, /^__Host-sid=/); assert.match(sc, /HttpOnly/); assert.match(sc, /Secure/); assert.match(sc, /SameSite=Strict/); assert.match(sc, /Path=\//);
   const token = cookie.split('=')[1];
@@ -172,7 +172,7 @@ test('الدخول بكلمة المرور فقط: المعلم يدخل بكل�
   assert.equal(tLog.r.data.name, 'المعلم');
 
   // دخول الإدارة بكلمة المرور فقط
-  const aLog = await w.login('admin', 'Boss-Pass-123');
+  const aLog = await w.login('admin', 'Tal@al11');
   assert.equal(aLog.r.status, 200);
   assert.equal(aLog.r.data.role, 'admin');
   assert.equal(aLog.r.data.name, 'الإدارة');
@@ -181,7 +181,7 @@ test('الدخول بكلمة المرور فقط: المعلم يدخل بكل�
   assert.equal((await w.login('admin', 'teacher@77')).r.status, 401);
 
   // كلمة الإدارة تُرفض في بوابة المعلمين
-  assert.equal((await w.login('teacher', 'Boss-Pass-123')).r.status, 401);
+  assert.equal((await w.login('teacher', 'Tal@al11')).r.status, 401);
 
   // كلمة مرور خاطئة
   assert.equal((await w.login('teacher', 'wrong-pass')).r.status, 401);
@@ -258,11 +258,11 @@ test('تغيير كلمة مرور الإدارة: التحقق من الحال�
   assert.equal(badRes.status, 401);
 
   // تحديث ناجح
-  const okRes = await w.call('PUT', '/api/admin/passwords/admin', { cookie: a, body: { current: 'Boss-Pass-123', next: 'New-Boss-Pass-2026' } });
+  const okRes = await w.call('PUT', '/api/admin/passwords/admin', { cookie: a, body: { current: 'Tal@al11', next: 'New-Boss-Pass-2026' } });
   assert.equal(okRes.status, 200);
 
   // القديمة لم تعد تعمل
-  assert.equal((await w.login('admin', 'Boss-Pass-123')).r.status, 401);
+  assert.equal((await w.login('admin', 'Tal@al11')).r.status, 401);
 
   // الجديدة تعمل
   assert.equal((await w.login('admin', 'New-Boss-Pass-2026')).r.status, 200);
@@ -345,7 +345,7 @@ test('تشفير PBKDF2 والمقارنة في زمن ثابت', async () => {
 
 test('Turnstile: عند تفعيله يُشترط الرمز ويُتحقق منه لدى Cloudflare', async () => {
   const w = world({ TURNSTILE_SECRET: 'sec', TURNSTILE_SITE_KEY: 'site' });
-  const body = { gate: 'admin', password: 'Boss-Pass-123' };
+  const body = { gate: 'admin', password: 'Tal@al11' };
   assert.equal((await w.call('GET', '/api/public')).data.turnstile_site_key, 'site');
   assert.equal((await w.call('POST', '/api/login', { body })).status, 400);
 
