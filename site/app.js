@@ -2,10 +2,10 @@
    منصة رصد الغياب — الواجهة (ملف واحد)
    لا يُستخدم HTML خام في أي مكان: كل النصوص تُدرج بـ textContent فلا يمكن لأي بيانات أن تتحول إلى كود.
    فهرس الملف:
-    1) أدوات DOM والأيقونات والرسائل   2) الاتصال بالخادم   3) الحالة والمسارات
-    4) الرئيسية وتسجيل الدخول وتغيير كلمة المرور   5) هيكل الصفحة (ترويسة + تبويبات)
+    1) أدوات DOM والأيقونات والرسائل   2) الاتصال بالخادم   3) الحالة واختيار المعلم
+    4) الرئيسية والدخول بكلمة المرور فقط   5) هيكل الصفحة (ترويسة + تبويبات)
     6) رصد الغياب (المعلم)   7) التقارير (يومي/أسبوعي/شهري)
-    8) لوحة الإدارة: الصفوف، المعلمون، السجلات، الإعدادات   9) التشغيل
+    8) لوحة الإدارة: الصفوف، المعلمون، كلمات المرور، الإعدادات   9) التشغيل
    ============================================================================= */
 (function () {
   'use strict';
@@ -60,9 +60,11 @@
     sparkles: 'm12 3 1.91 5.09L19 10l-5.09 1.91L12 17l-1.91-5.09L5 10l5.09-1.91L12 3Z',
     filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3Z',
     fileText: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
-    google: 'M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z',
-    info: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-5h2v2h-2v-2zm0-8h2v6h-2V7z'
+    info: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-5h2v2h-2v-2zm0-8h2v6h-2V7z',
+    eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zm11 5a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+    edit: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'
   };
+
   function icon(name) {
     var ns = 'http://www.w3.org/2000/svg';
     var svg = document.createElementNS(ns, 'svg');
@@ -132,10 +134,6 @@
           btn(okLabel || 'تأكيد', { kind: danger ? 'danger' : 'primary', on: function () { done(true); } }))]);
     });
   }
-  function infoBox(title, content) {
-    var box = overlay([h('h3', { text: title }), content, h('div', { class: 'acts' }, btn('إغلاق', { kind: 'primary', on: function () { box.close(); } }))]);
-    return box;
-  }
   function busy(button, fn) {
     button.disabled = true;
     return Promise.resolve().then(fn).then(function (r) { button.disabled = false; return r; }, function (e) { button.disabled = false; throw e; });
@@ -143,28 +141,13 @@
   var fail = function (e) { toast((e && e.message) || 'حدث خطأ', true); };
   var empty = function (t, hint) { return h('div', { class: 'empty' }, h('b', { text: t }), hint && h('span', { text: hint })); };
   var skeleton = function (n) { var d = h('div', { 'aria-hidden': 'true' }); for (var i = 0; i < (n || 3); i++) d.append(h('div', { class: 'skel' })); return d; };
-  function newRandomPassword(len) {
-    len = len || 10;
-    var alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    var out = '';
-    var vals = new Uint8Array(len);
-    if (window.crypto && window.crypto.getRandomValues) {
-      window.crypto.getRandomValues(vals);
-      for (var i = 0; i < len; i++) out += alpha[vals[i] % alpha.length];
-    } else {
-      for (var j = 0; j < len; j++) out += alpha.charAt(Math.floor(Math.random() * alpha.length));
-    }
-    return out;
-  }
 
-  /* ---- التواريخ (نستخدم تاريخ الخادم لا ساعة الجهاز) ---- */
+  /* ---- التواريخ ---- */
   var DAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
   var dow = function (d) { return new Date(d + 'T00:00:00Z').getUTCDay(); };
   function addDays(d, n) { var t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
   var isWeekend = function (d) { return S.config.weekend_days.indexOf(dow(d)) >= 0; };
   var STATUS = { present: ['حاضر', 'check'], absent: ['غائب', 'x'], late: ['متأخر', 'clock'] };
-  function stamp(s) { return h('span', { class: 'stamp ' + s }, icon(STATUS[s][1]), STATUS[s][0]); }
-  var arNum = function (s) { return String(s).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }); };
 
   function downloadCSV(name, rows) {
     var text = '﻿' + rows.map(function (r) { return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
@@ -189,10 +172,26 @@
   }
   var get = function (p) { return api('GET', p); };
   var post = function (p, b) { return api('POST', p, b || {}); };
+  var put = function (p, b) { return api('PUT', p, b || {}); };
   var qs = function (o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(o[k]); }).join('&'); };
 
-  /* ---------------------------------------------------------------- 3) الحالة والمسارات */
-  var S = { pub: {}, user: null, config: null, rules: [], groups: null };
+  /* ---------------------------------------------------------------- 3) الحالة واختيار المعلم */
+  var S = {
+    pub: {},
+    user: null,
+    config: null,
+    rules: [],
+    groups: null,
+    teachersList: [],
+    selectedTeacher: ''
+  };
+
+  try {
+    S.selectedTeacher = localStorage.getItem('selected_teacher_name') || '';
+  } catch (e) {
+    S.selectedTeacher = '';
+  }
+
   var stops = [];
   function onStop(fn) { stops.push(fn); }
   function stopAll() { stops.splice(0).forEach(function (f) { f(); }); }
@@ -206,19 +205,28 @@
     if (S.groups && !force) return Promise.resolve(S.groups);
     return get('/api/groups').then(function (r) { S.groups = r.groups; return S.groups; });
   }
-  function loadMe() {
-    return get('/api/me').then(function (r) { S.user = r; S.config = r.config; S.rules = r.rules || []; return r; });
+
+  function loadTeachersRoster(force) {
+    if (S.teachersList.length && !force) return Promise.resolve(S.teachersList);
+    return get('/api/teachers').then(function (r) {
+      S.teachersList = r.teachers || [];
+      return S.teachersList;
+    });
   }
+
+  function loadMe() {
+    return get('/api/me').then(function (r) {
+      S.user = r;
+      S.config = r.config;
+      S.rules = r.rules || [];
+      return r;
+    });
+  }
+
   var home = function () {
     if (S.user.role === 'admin') return '#/a/monthly';
-    if (S.user.role === 'viewer') return '#/v/daily';
     return '#/t/attendance';
   };
-
-  var VIEWER_TABS = [
-    ['daily', 'الغياب اليومي', 'book'],
-    ['weekly', 'نشاط المعلمين', 'users']
-  ];
 
   var TEACHER_TABS = [
     ['attendance', 'رصد الحضور', 'check'],
@@ -234,7 +242,7 @@
       icon: 'book',
       defaultTab: 'monthly',
       tabs: [
-        ['monthly', 'التقرير الشهري', 'calendar'],
+        ['monthly', 'التقرير الشهري', 'book'],
         ['daily', 'التقرير اليومي', 'book'],
         ['weekly', 'إحصائيات المعلمين', 'users']
       ]
@@ -251,14 +259,14 @@
       ]
     },
     {
-      id: 'admin_accounts',
-      label: 'الحسابات وإعدادات المنصة',
-      shortLabel: 'الإدارة والحسابات',
+      id: 'admin_management',
+      label: 'المعلمون وكلمات المرور',
+      shortLabel: 'المعلمون والتحكم',
       icon: 'shieldCheck',
       defaultTab: 'teachers',
       tabs: [
-        ['teachers', 'المعلمون والحسابات', 'userPlus'],
-        ['settings', 'إعدادات المنصة وFirebase', 'database']
+        ['teachers', 'دليل المعلمين وكلمات المرور', 'userPlus'],
+        ['settings', 'إعدادات المنصة واللائحة', 'database']
       ]
     }
   ];
@@ -293,30 +301,94 @@
         })));
   }
 
+  // نافذة اختيار المعلم (تظهر للمرة الأولى أو عند النقر على تغيير المعلم)
+  function openTeacherSelectorModal(onDone) {
+    loadTeachersRoster().then(function (teachers) {
+      var box;
+      var searchIn = h('input', { type: 'search', placeholder: 'ابحث عن اسمك في القائمة…', 'aria-label': 'بحث عن معلم' });
+      var listHost = h('div', { class: 'teacher-grid' });
+
+      function renderGrid() {
+        var query = searchIn.value.trim().toLowerCase();
+        var hits = teachers.filter(function (t) {
+          return !query || t.name.toLowerCase().indexOf(query) >= 0;
+        });
+
+        mount(listHost, hits.length ? hits.map(function (t) {
+          var isCur = S.selectedTeacher === t.name;
+          return h('button', {
+            type: 'button',
+            class: 'teacher-grid-btn' + (isCur ? ' selected' : ''),
+            onclick: function () {
+              S.selectedTeacher = t.name;
+              try { localStorage.setItem('selected_teacher_name', t.name); } catch (e) {}
+              toast('أهلاً بك: ' + t.name);
+              box.close();
+              if (onDone) onDone(t.name);
+              render();
+            }
+          },
+            h('span', { text: t.name }),
+            isCur ? icon('check') : null);
+        }) : empty('لم يُعثر على معلّم بهذا الاسم'));
+      }
+
+      searchIn.addEventListener('input', renderGrid);
+      renderGrid();
+
+      box = overlay([
+        h('h3', { text: 'من أنت؟ اختر اسمك للمتابعة' }),
+        h('p', { class: 'muted small', text: 'اختر اسمك من قائمة المعلمين لحفظ هويتك في هذا المتصفح ورصد الحصص باسمك المعتمد.' }),
+        h('div', { style: 'margin: 12px 0;' }, searchIn),
+        listHost,
+        h('div', { class: 'acts' },
+          S.selectedTeacher && btn('إلغاء', { on: function () { box.close(); } }))
+      ]);
+    }).catch(fail);
+  }
+
   function render() {
     stopAll();
     var parts = location.hash.replace(/^#\/?/, '').split('/');
     document.title = (S.pub.school_name || 'منصة رصد الغياب') + ' | رصد الغياب';
     window.scrollTo(0, 0);
+
     if (!S.user) {
-      if (parts[0] === 'login' && (parts[1] === 'teacher' || parts[1] === 'admin')) return viewLogin(parts[1]);
+      if (parts[0] === 'login' && (parts[1] === 'teacher' || parts[1] === 'admin')) {
+        return viewLogin(parts[1]);
+      }
       return viewHome();
     }
-    if (S.user.must_change || parts[0] === 'pw') return viewPassword();
+
     var isAdmin = S.user.role === 'admin';
-    var isViewer = S.user.role === 'viewer';
-    var allTabs = isAdmin ? ADMIN_ALL_TABS : (isViewer ? VIEWER_TABS : TEACHER_TABS);
-    var prefix = isAdmin ? 'a' : (isViewer ? 'v' : 't');
+    var allTabs = isAdmin ? ADMIN_ALL_TABS : TEACHER_TABS;
+    var prefix = isAdmin ? 'a' : 't';
     var tab = parts[0] === prefix && allTabs.some(function (t) { return t[0] === parts[1]; }) ? parts[1] : null;
-    if (!tab) { history.replaceState(null, '', home()); tab = allTabs[0][0]; }
-    var views = { attendance: viewAttendance, daily: viewDaily, weekly: viewWeekly, monthly: viewMonthly, classes: viewClasses, teachers: viewTeachers, records: viewRecords, settings: viewSettings };
+
+    if (!tab) {
+      history.replaceState(null, '', home());
+      tab = allTabs[0][0];
+    }
+
+    var views = {
+      attendance: viewAttendance,
+      daily: viewDaily,
+      weekly: viewWeekly,
+      monthly: viewMonthly,
+      classes: viewClasses,
+      teachers: viewTeachers,
+      records: viewRecords,
+      settings: viewSettings
+    };
+
     var body = h('div');
-    var viewerBanner = isViewer ? h('div', { class: 'note info small', role: 'status' },
-      icon('info'),
-      h('b', { text: ' حسابك بصلاحية (مشاهد - للاطلاع فقط): ' }),
-      'يمكنك استعراض كشوف الغياب اليومية ونشاط المعلمين في المدرسة. إذا كنت معلماً وترغب في رصد الحضور والغياب لطلابك، يرجى التواصل مع إدارة المدرسة لترقية حسابك.') : null;
-    mount(app, frame(tab, isAdmin, isViewer), h('main', { class: 'wrap' }, viewerBanner, subNavigation(tab, isAdmin), body, siteFooter()));
+    mount(app, frame(tab, isAdmin), h('main', { class: 'wrap' }, subNavigation(tab, isAdmin), body, siteFooter()));
     views[tab](body);
+
+    // إذا كان معلماً ولم يسبق له اختيار اسمه، نفتح نافذة الاختيار فوراً
+    if (!isAdmin && !S.selectedTeacher) {
+      setTimeout(function () { openTeacherSelectorModal(); }, 300);
+    }
   }
 
   /* ---------------------------------------------------------------- 4) الرئيسية والدخول */
@@ -330,11 +402,10 @@
     var cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     var next = cur === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
-    try { localStorage.setItem('theme', next); } catch (e) { /* التخزين غير متاح */ }
+    try { localStorage.setItem('theme', next); } catch (e) {}
     render();
   }
 
-  // سطر المدير والتطوير: يظهر في أسفل كل الصفحات
   function siteFooter() {
     var p = S.pub;
     return h('footer', { class: 'site-foot' },
@@ -342,190 +413,10 @@
       p.developer_credit && h('span', null, icon('code'), ' تطوير وبرمجة: ', h('b', { class: 'gold', text: p.developer_credit })));
   }
 
-  // تنبيه واضح حين تُفتح الصفحة بلا خادم (مثلاً بالنقر المزدوج على index.html)
   function offlineNote() {
     if (!S.offline) return null;
     return h('div', { class: 'note', role: 'alert' }, h('b', { text: 'الخادم غير متصل. ' }),
-      location.protocol === 'file:' ? 'أنت تفتح الملف مباشرة من الجهاز، والمنصة تحتاج الخادم. شغّل الملف start-local.bat الموجود في مجلد server ثم افتح العنوان الذي يظهر.'
-        : 'تعذر الوصول إلى الخادم. تحقق من الاتصال أو من أن الموقع منشور بشكل صحيح.');
-  }
-
-  function googleColoredIcon() {
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('class', 'g-icon');
-    svg.setAttribute('aria-hidden', 'true');
-
-    var p1 = document.createElementNS(ns, 'path');
-    p1.setAttribute('fill', '#4285F4');
-    p1.setAttribute('d', 'M23.49 12.27c0-.8-.07-1.57-.2-2.31H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58l3.66 2.84c2.14-1.98 3.76-4.9 3.76-8.62z');
-
-    var p2 = document.createElementNS(ns, 'path');
-    p2.setAttribute('fill', '#34A853');
-    p2.setAttribute('d', 'M12 23c3.24 0 5.95-1.07 7.93-2.91l-3.66-2.84c-1.07.72-2.45 1.16-4.27 1.16-3.21 0-5.9-2.54-6.77-5.18L1.57 16.02C3.51 19.78 7.42 22.36 12 23z');
-
-    var p3 = document.createElementNS(ns, 'path');
-    p3.setAttribute('fill', '#FBBC05');
-    p3.setAttribute('d', 'M1.57 7.34C.99 8.76.67 10.34.67 12s.32 3.24.9 4.66l3.66-2.84c-.2-.58-.33-1.2-.33-1.82s.13-1.24.33-1.82L1.57 7.34z');
-
-    var p4 = document.createElementNS(ns, 'path');
-    p4.setAttribute('fill', '#EA4335');
-    p4.setAttribute('d', 'M12 5c1.57 0 2.98.54 4.09 1.6l3.07-3.07C17.3 1.73 14.86 1 12 1 7.42 1 3.51 3.58 1.57 7.34l3.66 2.84C6.1 7.54 8.79 5 12 5z');
-
-    svg.append(p1, p2, p3, p4);
-    return svg;
-  }
-
-  function googleLoginBtn() {
-    return h('a', {
-      class: 'btn-google',
-      href: '/api/auth/google/login',
-      role: 'button'
-    }, googleColoredIcon(), h('span', { text: 'Continue with Google' }));
-  }
-
-  function openGoogleAuthModal() {
-    var savedAccounts = [];
-    try {
-      var raw = localStorage.getItem('g_saved_accounts');
-      if (raw) savedAccounts = JSON.parse(raw);
-    } catch (e) { savedAccounts = []; }
-
-    if (!savedAccounts || !savedAccounts.length) {
-      savedAccounts = [
-        { name: 'حساب Google تجريبي', email: 'user.google@gmail.com' }
-      ];
-    }
-
-    var box;
-    var contentHost = h('div');
-
-    function performLogin(email, name, btnEl) {
-      var act = btnEl ? busy(btnEl, function () { return doCall(); }) : doCall();
-      function doCall() {
-        return post('/api/auth/google', { email: email, name: name || undefined })
-          .then(function () {
-            try {
-              var list = (savedAccounts || []).filter(function (x) { return x.email.toLowerCase() !== email.toLowerCase(); });
-              list.unshift({ name: name || email.split('@')[0], email: email });
-              localStorage.setItem('g_saved_accounts', JSON.stringify(list.slice(0, 5)));
-            } catch (err) {}
-            if (box) box.close();
-            S.user = null;
-            return loadMe();
-          })
-          .then(function () {
-            var roleMsg = S.user.role === 'viewer' ? 'مشاهد (اطلاع فقط)' : (S.user.role === 'teacher' ? 'معلم' : 'إدارة');
-            toast('مرحباً بك ' + S.user.name + '! تم الدخول بنجاح بصلاحية: ' + roleMsg);
-            location.hash = home();
-            render();
-          });
-      }
-      return act.catch(function (err) {
-        toast(err.message, true);
-      });
-    }
-
-    function renderChooser() {
-      var accountsList = h('div', { class: 'g-accounts-list' });
-
-      savedAccounts.forEach(function (acc) {
-        var initial = (acc.name || acc.email || 'G').slice(0, 1).toUpperCase();
-        var row = h('button', {
-          type: 'button',
-          class: 'g-account-item',
-          onclick: function () {
-            performLogin(acc.email, acc.name, row);
-          }
-        },
-          h('div', { class: 'g-avatar', text: initial }),
-          h('div', { class: 'g-account-text' },
-            h('div', { class: 'g-account-name', text: acc.name }),
-            h('div', { class: 'g-account-email', text: acc.email })
-          )
-        );
-        accountsList.append(row);
-      });
-
-      var useOtherBtn = h('button', {
-        type: 'button',
-        class: 'g-other-btn',
-        onclick: renderCustomEmailForm
-      }, icon('userPlus'), h('span', { text: 'Use another account / استخدام حساب آخر' }));
-
-      mount(contentHost,
-        h('div', { class: 'g-brand-box' },
-          h('div', { class: 'g-app-icon' }, icon('school')),
-          h('h2', { text: 'Choose an account' }),
-          h('p', null, 'to continue to ', h('b', { text: S.pub.school_name || 'منصة رصد الغياب' }))
-        ),
-        accountsList,
-        useOtherBtn,
-        h('p', { class: 'g-footer-note', text: 'الحسابات المنشأة تمنح تلقائياً صلاحية (مشاهد للاطلاع فقط)، وتستطيع إدارة المدرسة ترقية الحساب إلى معلم من لوحة الإدارة.' }),
-        h('div', { class: 'acts' },
-          btn('إلغاء / Cancel', { on: function () { if (box) box.close(); } })
-        )
-      );
-    }
-
-    function renderCustomEmailForm() {
-      var emailIn = h('input', { type: 'email', required: true, dir: 'ltr', placeholder: 'your.name@gmail.com أو name@school.edu' });
-      var nameIn = h('input', { type: 'text', dir: 'auto', maxlength: '100', placeholder: 'اسمك الكامل (عربي أو إنجليزي)' });
-      var msg = h('p', { class: 'err', role: 'alert' });
-      var submitBtn = h('button', { class: 'btn primary block', type: 'submit' }, 'التالي / Next');
-
-      var form = h('form', { onsubmit: function (e) {
-        e.preventDefault(); msg.textContent = '';
-        var em = emailIn.value.trim();
-        var nm = nameIn.value.trim();
-        if (!em) { msg.textContent = 'يرجى إدخال البريد الإلكتروني'; return; }
-        busy(submitBtn, function () {
-          return performLogin(em, nm);
-        }).catch(function (err) {
-          msg.textContent = err.message;
-        });
-      } },
-        field('البريد الإلكتروني (Google Account Email)', emailIn, 'أدخل البريد الإلكتروني المعتمد للدخول والمصادقة.'),
-        field('الاسم الكامل (اختياري للحسابات الجديدة)', nameIn, 'اسمك الذي سيظهر للمدرسة وللإدارة.'),
-        msg,
-        h('div', { class: 'acts' },
-          btn('رجوع / Back', { on: renderChooser }),
-          submitBtn
-        )
-      );
-
-      mount(contentHost,
-        h('div', { class: 'g-brand-box' },
-          h('div', { class: 'g-app-icon' }, icon('school')),
-          h('h2', { text: 'Sign in with Google' }),
-          h('p', null, 'Enter your email to continue to ', h('b', { text: S.pub.school_name || 'منصة رصد الغياب' }))
-        ),
-        form
-      );
-      emailIn.focus();
-    }
-
-    renderChooser();
-
-    var modalWrapper = h('div', { class: 'overlay', role: 'dialog', 'aria-modal': 'true' },
-      h('div', { class: 'g-modal' },
-        h('div', { class: 'g-modal-header' },
-          googleColoredIcon(),
-          h('span', { text: 'Sign in with Google' })
-        ),
-        contentHost
-      )
-    );
-
-    function close() {
-      modalWrapper.remove();
-      document.removeEventListener('keydown', onKey);
-    }
-    function onKey(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', onKey);
-    document.body.append(modalWrapper);
-    box = { close: close };
+      'تعذر الوصول إلى الخادم. تأكد من تشغيل خادم المنصة أو الاتصال بالإنترنت.');
   }
 
   function viewHome() {
@@ -536,42 +427,60 @@
         offlineNote(),
         h('div', { class: 'badge' }, icon('book'), p.school_name || 'المدرسة'),
         h('h1', { text: 'منصة رصد الغياب الذكية' }),
-        h('p', { class: 'lead', text: 'نظام إلكتروني متطور لتتبع حضور وغياب الطلاب بكل مرونة، مع دعم الصفوف المتنقلة والربط التلقائي، ومزامنة فورية كاملة.' }),
+        h('p', { class: 'lead', text: 'نظام إلكتروني موحد لتتبع حضور وغياب الطلاب بكل دقة وسهولة، مع دعم المواد المتنقلة والتقارير الشهرية الفورية.' }),
         h('div', { class: 'pills' }, p.principal_name && h('div', { class: 'pill' }, icon('user'), ' مدير المدرسة: ', h('b', { text: p.principal_name }))),
         h('div', { class: 'gates' },
           h('a', { class: 'btn primary', href: '#/login/teacher' }, icon('users'), 'بوابة المعلمين'),
-          h('a', { class: 'btn', href: '#/login/admin' }, icon('shield'), 'لوحة الإدارة')),
-        h('div', { class: 'login-sep' }, h('span', { text: 'أو الدخول والمصادقة عبر Google' })),
-        googleLoginBtn(),
+          h('a', { class: 'btn', href: '#/login/admin' }, icon('shield'), 'لوحة إدارة المدرسة')),
         p.developer_credit && h('div', { class: 'credit' }, icon('code'), ' تطوير وبرمجة: ', h('b', { text: p.developer_credit })))));
   }
 
+  // شاشة الدخول بكلمة المرور فقط دون أي اسم مستخدم أو بريد
   function viewLogin(gate) {
     var isAdmin = gate === 'admin';
-    var user = h('input', { type: 'text', autocomplete: 'username', required: true, dir: 'auto', autocapitalize: 'none', spellcheck: 'false', maxlength: '100', placeholder: isAdmin ? 'مثال: admin أو المدير العام' : 'مثال: أحمد الصالحي أو t01' });
-    var pass = h('input', { type: 'password', autocomplete: 'current-password', required: true, dir: 'ltr', maxlength: '200' });
+    var pass = h('input', {
+      type: 'password',
+      autocomplete: 'current-password',
+      required: true,
+      dir: 'ltr',
+      maxlength: '200',
+      placeholder: isAdmin ? 'أدخل كلمة مرور الإدارة…' : 'أدخل كلمة مرور المعلمين…'
+    });
     var msg = h('p', { class: 'err', role: 'alert' });
     var tsBox = h('div'); var tsToken = '';
     var submit = h('button', { class: 'btn primary block', type: 'submit' }, 'دخول');
+
     var form = h('form', { onsubmit: function (e) {
       e.preventDefault(); msg.textContent = '';
       busy(submit, function () {
-        return post('/api/login', { gate: gate, username: user.value, password: pass.value, turnstile: tsToken })
-          .then(function (r) { S.user = null; return loadMe(); })
+        return post('/api/login', { gate: gate, password: pass.value, turnstile: tsToken })
+          .then(function () { S.user = null; return loadMe(); })
           .then(function () { location.hash = home(); render(); });
-      }).catch(function (err) { msg.textContent = err.message; pass.value = ''; if (window.turnstile && tsBox.firstChild) window.turnstile.reset(); tsToken = ''; });
-    } }, field(isAdmin ? 'اسم مستخدم الإدارة' : 'اسم المعلم (أو اسم المستخدم)', user, isAdmin ? 'أدخل اسم المستخدم أو الاسم المسجل (عربي أو إنجليزي).' : 'اكتب اسمك كما هو مسجل (عربي أو إنجليزي) أو اسم المستخدم.'), field('كلمة المرور', pass), tsBox, msg, submit);
+      }).catch(function (err) {
+        msg.textContent = err.message;
+        pass.value = '';
+        if (window.turnstile && tsBox.firstChild) window.turnstile.reset();
+        tsToken = '';
+      });
+    } },
+      field(isAdmin ? 'كلمة مرور الإدارة' : 'كلمة مرور المعلمين', pass, isAdmin ? 'أدخل كلمة المرور المخصصة لإدارة المنصة.' : 'أدخل كلمة المرور الموحدة للمعلمين للوصول إلى لوحة الرصد.'),
+      tsBox,
+      msg,
+      submit);
+
     mount(app, h('div', { class: 'hero' }, h('div', { class: 'corner' }, themeButton()),
       h('div', { class: 'login-card' },
         h('h2', { text: isAdmin ? 'لوحة إدارة المدرسة' : 'بوابة المعلمين' }),
-        h('p', { class: 'muted', text: isAdmin ? 'للإدارة فقط.' : 'أدخل اسمك وكلمة المرور التي سلّمتها لك الإدارة. يمكنك تغييرها بعد الدخول.' }), offlineNote(),
+        h('p', { class: 'muted', text: isAdmin ? 'لوحة التحكم الإدارية، التقارير الشاملة، وإعدادات المنصة.' : 'تسجيل دخول موحد للمعلمين لرصد الحصص والغياب اليومي.' }),
+        offlineNote(),
         form,
-        h('div', { class: 'login-sep' }, h('span', { text: 'أو الدخول عبر Google / البريد' })),
-        googleLoginBtn(),
-        h('p', { class: 'small' }, h('a', { href: '#/', text: 'العودة للرئيسية' })), siteFooter())));
-    user.focus();
+        h('p', { class: 'small' }, h('a', { href: '#/', text: 'العودة للرئيسية' })),
+        siteFooter())));
+
+    pass.focus();
     if (S.pub.turnstile_site_key) loadTurnstile(tsBox, S.pub.turnstile_site_key, function (t) { tsToken = t; });
   }
+
   function loadTurnstile(box, key, onToken) {
     function draw() { window.turnstile.render(box, { sitekey: key, callback: onToken, 'expired-callback': function () { onToken(''); } }); }
     if (window.turnstile) return draw();
@@ -579,34 +488,14 @@
     s.onload = draw; document.head.append(s);
   }
 
-  function viewPassword() {
-    var forced = S.user.must_change;
-    var cur = h('input', { type: 'password', autocomplete: 'current-password', required: true, dir: 'ltr' });
-    var nw = h('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: '8', dir: 'ltr' });
-    var again = h('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: '8', dir: 'ltr' });
-    var msg = h('p', { class: 'err', role: 'alert' });
-    var submit = h('button', { class: 'btn primary block', type: 'submit' }, 'حفظ كلمة المرور');
-    var form = h('form', { onsubmit: function (e) {
-      e.preventDefault(); msg.textContent = '';
-      if (nw.value !== again.value) { msg.textContent = 'كلمتا المرور الجديدتان غير متطابقتين'; return; }
-      busy(submit, function () {
-        return post('/api/password', { current: cur.value, next: nw.value }).then(loadMe).then(function () { toast('تم تغيير كلمة المرور'); location.hash = home(); render(); });
-      }).catch(function (err) { msg.textContent = err.message; });
-    } }, field(forced ? 'كلمة المرور المؤقتة' : 'كلمة المرور الحالية', cur), field('كلمة المرور الجديدة (8 أحرف أو أكثر)', nw), field('تأكيد كلمة المرور الجديدة', again), msg, submit);
-    mount(app, h('div', { class: 'hero' }, h('div', { class: 'login-card' },
-      h('h2', { text: forced ? 'اختر كلمة مرور خاصة بك' : 'تغيير كلمة المرور' }),
-      forced && h('p', { class: 'muted', text: 'هذه أول مرة تدخل فيها. كلمة المرور المؤقتة لا تصلح للاستخدام الدائم.' }),
-      form,
-      h('p', { class: 'small' }, forced ? btn('تسجيل الخروج', { sm: true, on: logout }) : h('a', { href: home(), text: 'رجوع' })), siteFooter())));
-    cur.focus();
-  }
   function logout() {
-    post('/api/logout').catch(function () {}).then(function () { S.user = null; S.groups = null; location.hash = '#/'; render(); });
+    post('/api/logout').catch(function () {}).then(function () {
+      S.user = null; S.groups = null; location.hash = '#/'; render();
+    });
   }
 
   /* ---------------------------------------------------------------- 5) هيكل الصفحة */
-  function frame(tab, isAdmin, isViewer) {
-    var pwBtn = h('a', { class: 'btn icon-btn', href: '#/pw', title: 'تغيير كلمة المرور', 'aria-label': 'تغيير كلمة المرور', 'data-tooltip': 'تغيير كلمة المرور' }, icon('key'));
+  function frame(tab, isAdmin) {
     var logoutBtn = h('button', {
       class: 'btn icon-btn logout-btn',
       type: 'button',
@@ -628,15 +517,6 @@
           'aria-selected': isCurrentCat ? 'true' : 'false'
         }, icon(c.icon), h('span', { text: c.shortLabel }));
       });
-    } else if (isViewer) {
-      navItems = VIEWER_TABS.map(function (t) {
-        return h('a', {
-          class: 'tab',
-          role: 'tab',
-          href: '#/v/' + t[0],
-          'aria-selected': t[0] === tab ? 'true' : 'false'
-        }, icon(t[2]), h('span', { text: t[1] }));
-      });
     } else {
       navItems = TEACHER_TABS.map(function (t) {
         return h('a', {
@@ -648,26 +528,39 @@
       });
     }
 
-    var roleLabel = isAdmin ? '(الإدارة)' : (isViewer ? '(مشاهد - اطلاع فقط)' : '(معلم)');
-    var roleIcon = isAdmin ? 'shieldCheck' : (isViewer ? 'info' : 'user');
+    // شريحة هوية المستخدم في الأعلى
+    var userBadge;
+    if (isAdmin) {
+      userBadge = h('div', { class: 'who-chip' },
+        icon('shieldCheck'),
+        h('b', { text: 'إدارة المدرسة' }),
+        h('span', { class: 'small muted', text: '(تحكم كامل)' }));
+    } else {
+      var curTeacherName = S.selectedTeacher || 'اختر اسم المعلم';
+      var isChosen = !!S.selectedTeacher;
+      userBadge = h('div', { class: 'teacher-select-chip' + (isChosen ? '' : ' highlight') },
+        icon('user'),
+        h('span', null, 'المعلم: ', h('b', { text: curTeacherName })),
+        btn(isChosen ? 'تغيير' : 'اختيار الاسم', {
+          sm: true,
+          ic: 'edit',
+          title: 'تغيير هوية المعلم',
+          on: function () { openTeacherSelectorModal(); }
+        }));
+    }
 
     return h('div', null,
       h('header', { class: 'topbar' }, h('div', { class: 'wrap' },
         h('div', { class: 'brand' },
           h('div', { class: 'logo' }, icon('school')),
           h('span', { text: S.pub.school_name || 'رصد الغياب' })),
-        h('div', { class: 'who-chip' },
-          icon(roleIcon),
-          h('b', { text: S.user.name }),
-          h('span', { class: 'small muted', text: roleLabel })),
+        userBadge,
         h('div', { class: 'topbar-btns' },
           themeButton(),
-          pwBtn,
           logoutBtn))),
       h('nav', { class: 'tabbar', role: 'tablist', 'aria-label': 'التنقل الرئيسي' }, navItems));
   }
 
-  // قائمة اختيار الصف: الفئات (الصفوف الأساسية / المواد المتنقلة) كمجموعات
   function groupSelect(kinds, value, onchange) {
     var sel = h('select', { 'aria-label': 'الصف أو المادة', onchange: function () { onchange(sel.value); } }, h('option', { value: '', text: '— اختر الصف أو المادة —' }));
     var cats = { basic: 'الصفوف الأساسية', mobile: 'المواد المتنقلة' };
@@ -703,7 +596,7 @@
   function lastSchoolDay(d) { while (isWeekend(d)) d = addDays(d, -1); return d; }
   function printButton() { return btn('طباعة', { ic: 'print', sm: true, on: function () { window.print(); } }); }
 
-  /* ---------------------------------------------------------------- 6) رصد الغياب */
+  /* ---------------------------------------------------------------- 6) رصد الغياب (المعلم) */
   function viewAttendance(host) {
     var st = { date: lastSchoolDay(S.config.today), period: 1, gid: '', students: [], marks: {}, notes: {}, record: null, loaded: false };
     var minDate = addDays(S.config.today, -S.config.max_backdate_days);
@@ -769,20 +662,36 @@
       paintCounts();
       var save = btn('حفظ الرصد', { kind: 'primary', ic: 'check', type: 'button' });
       save.onclick = function () {
+        if (!S.selectedTeacher) {
+          openTeacherSelectorModal(function () { save.click(); });
+          return;
+        }
         var c = counts();
-        confirmBox('حفظ رصد الحصة؟', 'غائب: ' + c.absent + '، متأخر: ' + c.late + '. بعد الحفظ لا يمكن للمعلم تعديل الحصة، ويتطلب ذلك الإدارة.', 'حفظ').then(function (ok) {
+        confirmBox('حفظ رصد الحصة باسم «' + S.selectedTeacher + '»؟', 'غائب: ' + c.absent + '، متأخر: ' + c.late + '. بعد الحفظ لا يمكن تعديل الحصة إلا عبر الإدارة.', 'حفظ').then(function (ok) {
           if (!ok) return;
           var entries = st.students.filter(function (s) { return (st.marks[s.id] || 'present') !== 'present'; })
             .map(function (s) { return { student_id: s.id, status: st.marks[s.id], note: st.notes[s.id] || '' }; });
-          busy(save, function () { return post('/api/record', { date: st.date, period: st.period, group_id: Number(st.gid), entries: entries }); })
-            .then(function () { toast('تم حفظ الرصد'); load(); }).catch(function (e) { fail(e); if (e.status === 409) load(); });
+          busy(save, function () {
+            return post('/api/record', {
+              date: st.date,
+              period: st.period,
+              group_id: Number(st.gid),
+              teacher_name: S.selectedTeacher,
+              entries: entries
+            });
+          }).then(function () {
+            toast('تم حفظ الرصد بنجاح');
+            load();
+          }).catch(function (e) {
+            fail(e);
+            if (e.status === 409) load();
+          });
         });
       };
-      var banner = locked ? h('div', { class: 'note info', text: 'تم رصد هذه الحصة بواسطة ' + st.record.teacher_name + '. للتعديل تواصل مع الإدارة.' }) : null;
+      var banner = locked ? h('div', { class: 'note info', text: 'تم رصد هذه الحصة بواسطة «' + st.record.teacher_name + '». للتعديل تواصل مع الإدارة.' }) : null;
       mount(out, banner, list, !locked && h('div', { class: 'savebar' }, h('div', { class: 'counts' }, cntOk, cntBad, cntLate), save),
         locked && h('div', { class: 'savebar' }, h('div', { class: 'counts' }, cntOk, cntBad, cntLate)));
 
-      // تفويض الأحداث: مستمع واحد للقائمة كلها (أسرع على الأجهزة الضعيفة)
       if (!locked) {
         list.addEventListener('click', function (e) {
           var b = e.target.closest('button[data-v]'); if (!b) return;
@@ -796,766 +705,400 @@
         list.addEventListener('input', function (e) { if (e.target.hasAttribute('data-n')) st.notes[Number(e.target.getAttribute('data-n'))] = e.target.value; });
       }
     }
-    // مزامنة: إن سجّل معلم آخر هذه الحصة أثناء عملك ننبّهك
+
     poll(function () {
-      if (!st.gid || st.record || isWeekend(st.date) || !st.students.length) return;
-      get('/api/record?' + qs({ date: st.date, period: st.period, group_id: st.gid })).then(function (r) {
-        if (r.record && !st.record) { toast('رُصدت هذه الحصة للتو بواسطة ' + r.record.teacher_name, true); load(); }
-      }).catch(function () {});
-    }, 20000);
+      if (st.gid && !st.record) {
+        get('/api/record?' + qs({ date: st.date, period: st.period, group_id: st.gid })).then(function (r) {
+          if (r.record && !st.record) { toast('رصد معلم آخر هذه الحصة للتو، تم تحديث الصفحة'); load(); }
+        }).catch(function () {});
+      }
+    }, 15000);
   }
 
   /* ---------------------------------------------------------------- 7) التقارير */
   function viewDaily(host) {
-    var st = { date: lastSchoolDay(S.config.today), gid: '' };
+    var date = lastSchoolDay(S.config.today);
+    var gid = '';
     var out = h('div');
-    var dateIn = h('input', { type: 'date', value: st.date, max: S.config.today, onchange: function () { st.date = dateIn.value || st.date; load(); } });
-    var grp = h('div');
-    host.append(h('div', { class: 'card noprint' },
-      h('h2', null, h('span', { text: 'تقرير الغياب اليومي' }), icon('book')),
-      h('div', { class: 'grid' }, field('الصف الأساسي', grp), field('التاريخ', dateIn))), out);
-    loadGroups().then(function () { mount(grp, groupSelect(['basic'], st.gid, function (v) { st.gid = v; load(); })); }).catch(fail);
+    var dateIn = h('input', { type: 'date', value: date, onchange: function () { date = dateIn.value || date; load(); } });
+    var grpHolder = h('div');
+
+    host.append(
+      h('div', { class: 'page-head' }, h('h2', { text: 'التقرير اليومي' }), printButton()),
+      h('div', { class: 'card noprint' },
+        h('div', { class: 'grid' }, field('التاريخ', dateIn), field('الصف الأساسي', grpHolder))),
+      out);
+
+    loadGroups().then(function (groups) {
+      var basic = groups.filter(function (g) { return g.kind === 'basic'; });
+      if (basic.length && !gid) gid = String(basic[0].id);
+      mount(grpHolder, groupSelect(['basic'], gid, function (v) { gid = v; load(); }));
+      load();
+    }).catch(fail);
+
     function load() {
-      if (!st.gid) { mount(out, empty('اختر الصف الأساسي لعرض التقرير اليومي')); return; }
-      mount(out, skeleton(3));
-      get('/api/reports/daily?' + qs({ date: st.date, group_id: st.gid })).then(function (r) {
-        var g = S.groups.filter(function (x) { return String(x.id) === String(st.gid); })[0];
-        if (!r.students.length) { mount(out, empty('جميع طلاب الصف حاضرون في هذا التاريخ!', 'لا توجد حالات غياب أو تأخر.')); return; }
-        mount(out, h('div', { class: 'row' }, h('h2', { text: 'تقرير ' + (g ? g.name : '') + ' — ' + DAYS[dow(st.date)] + ' ' + st.date }), printButton()),
-          h('p', { class: 'muted small', text: 'إجمالي الحالات: ' + r.students.length + ' طالب' }),
-          r.students.map(function (s) {
-            return h('article', { class: 'stu' }, h('header', null, h('span', { class: 'num', text: s.number }), h('span', { class: 'nm', text: s.name })),
-              s.items.map(function (i) {
-                return h('div', { class: 'line' }, h('b', { text: 'الحصة ' + i.period }), stamp(i.status), h('span', { class: 'muted', text: i.group_name }), h('span', { text: i.teacher_name }), i.note && h('span', { class: 'muted', text: '— ' + i.note }));
-              }));
-          }));
-      }).catch(function (e) { mount(out, h('div', { class: 'note', text: e.message })); });
+      if (!gid) { mount(out, empty('اختر الصف لعرض التقرير')); return; }
+      mount(out, skeleton(4));
+      get('/api/reports/daily?' + qs({ date: date, group_id: gid })).then(function (r) {
+        var t = h('table');
+        var headRow = h('tr', null, h('th', { text: 'م' }), h('th', { text: 'الرقم' }), h('th', { text: 'اسم الطالب' }));
+        for (var p = 1; p <= r.periods_count; p++) {
+          var tchr = r.teachers_by_period[p];
+          headRow.append(h('th', { title: tchr ? ('رصد: ' + tchr) : 'لم ترصد' }, 'ح' + p, tchr && h('small', { class: 'muted block' }, tchr)));
+        }
+        headRow.append(h('th', { text: 'المواد المتنقلة' }));
+        t.append(h('thead', null, headRow));
+        var tbody = h('tbody');
+        r.students.forEach(function (s, idx) {
+          var row = h('tr', null, h('td', { text: idx + 1 }), h('td', null, ltr(s.number)), h('td', null, h('b', { text: s.name })));
+          for (var pi = 1; pi <= r.periods_count; pi++) {
+            var ent = s.periods[pi];
+            row.append(h('td', { class: 'center' }, ent ? stamp(ent.status) : '—'));
+          }
+          var mob = s.mobile.map(function (m) { return m.group_name + ' (ح' + m.period + '): ' + STATUS[m.status][0]; }).join(' • ');
+          row.append(h('td', { class: 'small' }, mob || '—'));
+          tbody.append(row);
+        });
+        t.append(tbody);
+        mount(out, h('div', { class: 'card' },
+          h('div', { class: 'print-head' }, h('h3', { text: (S.pub.school_name || '') + ' — كشف الغياب اليومي' }),
+            h('p', { class: 'muted' }, 'الصف: ' + r.group.name + ' | التاريخ: ' + r.date + ' (' + DAYS[dow(r.date)] + ')')),
+          h('div', { class: 't-wrap' }, t)));
+      }).catch(fail);
     }
-    load();
-    poll(function () { if (st.gid) load(); }, 45000);
   }
 
   function viewWeekly(host) {
     var date = S.config.today;
     var out = h('div');
     var dateIn = h('input', { type: 'date', value: date, onchange: function () { date = dateIn.value || date; load(); } });
-    host.append(h('div', { class: 'card noprint' },
-      h('h2', null, h('span', { text: 'إحصائيات ونشاط المعلمين الأسبوعي' }), icon('users')),
-      field('اختر أي يوم ضمن الأسبوع', dateIn)), out);
+    host.append(
+      h('div', { class: 'page-head' }, h('h2', { text: 'نشاط وإحصائيات المعلمين الأسبوعية' }), printButton()),
+      h('div', { class: 'card noprint' }, field('اختر أي يوم ضمن الأسبوع المطلوب', dateIn)),
+      out);
     function load() {
+      mount(out, skeleton(4));
       get('/api/reports/weekly?' + qs({ date: date })).then(function (r) {
-        if (!r.teachers.length) { mount(out, empty('لا يوجد معلمون مسجلون')); return; }
-        mount(out, h('div', { class: 'row' }, h('h2', { text: 'من ' + r.from + ' إلى ' + r.to }), printButton()),
-          h('p', { class: 'muted small', text: 'إجمالي الحصص المرصودة: ' + r.total }),
-          h('div', { class: 'card' }, r.teachers.map(function (t) {
-            var bar = h('div', { class: 'bar' }, h('i')); bar.firstChild.style.setProperty('--w', t.percent + '%');
-            return h('div', { class: 'bar-row' }, h('span', { text: t.name }), h('b', { text: t.sessions + ' حصة · ' + t.percent + '%' }), bar);
-          })));
-      }).catch(function (e) { mount(out, h('div', { class: 'note', text: e.message })); });
+        mount(out, h('div', { class: 'card' },
+          h('h3', { text: 'إجمالي الحصص المرصودة خلال الأسبوع: ' + r.total }),
+          h('p', { class: 'muted small' }, 'من ' + r.from + ' إلى ' + r.to),
+          h('div', { class: 't-wrap' }, h('table', null,
+            h('thead', null, h('tr', null, h('th', { text: 'المعلم' }), h('th', { text: 'عدد الحصص المرصودة' }), h('th', { text: 'النسبة' }))),
+            h('tbody', null, r.teachers.map(function (t) {
+              return h('tr', null, h('td', null, h('b', { text: t.name })), h('td', { text: t.sessions }), h('td', null, t.percent + '%'));
+            }))))));
+      }).catch(fail);
     }
     load();
-    poll(load, 45000);
   }
 
   function viewMonthly(host) {
-    var st = { month: S.config.today.slice(0, 7), gid: '' };
+    var curMonth = S.config.today.slice(0, 7);
+    var gid = '';
     var out = h('div');
-    var monthIn = h('input', { type: 'month', value: st.month, placeholder: 'YYYY-MM', onchange: function () { if (/^\d{4}-\d{2}$/.test(monthIn.value)) { st.month = monthIn.value; load(); } } });
-    var grp = h('div');
-    host.append(h('div', { class: 'card noprint' },
-      h('h2', null, h('span', { text: 'تقرير الغياب الشهري' }), icon('calendar')),
-      h('div', { class: 'grid' }, field('الصف الأساسي', grp), field('الشهر', monthIn))), out);
-    loadGroups().then(function () { mount(grp, groupSelect(['basic'], st.gid, function (v) { st.gid = v; load(); })); }).catch(fail);
+    var monthIn = h('input', { type: 'month', value: curMonth, onchange: function () { curMonth = monthIn.value || curMonth; load(); } });
+    var grpHolder = h('div');
+
+    host.append(
+      h('div', { class: 'page-head' }, h('h2', { text: 'التقرير الشهري ومتابعة الغياب' }), printButton()),
+      h('div', { class: 'card noprint' },
+        h('div', { class: 'grid' }, field('الشهر', monthIn), field('الصف الأساسي', grpHolder))),
+      out);
+
+    loadGroups().then(function (groups) {
+      var basic = groups.filter(function (g) { return g.kind === 'basic'; });
+      if (basic.length && !gid) gid = String(basic[0].id);
+      mount(grpHolder, groupSelect(['basic'], gid, function (v) { gid = v; load(); }));
+      load();
+    }).catch(fail);
+
     function load() {
-      if (!st.gid) { mount(out, empty('اختر الشهر والصف لعرض الغائبين')); return; }
-      mount(out, skeleton(3));
-      get('/api/admin/reports/monthly?' + qs({ month: st.month, group_id: st.gid })).then(function (r) {
-        mount(out, h('div', { class: 'row' }, h('h2', { text: 'تقرير ' + r.group.name + ' — ' + r.month }), printButton()),
-          h('div', { class: 'tiles' }, tile(r.totals.absence_days, 'إجمالي أيام الغياب'), tile(r.totals.late_days, 'إجمالي أيام التأخر'), tile(r.totals.students, 'عدد طلاب الصف')),
-          h('p', { class: 'muted small', text: 'يظهر الطلاب الذين بلغ غيابهم ' + r.min_days + ' أيام فأكثر. اليوم يُحسب مرة واحدة مهما تعددت الحصص (يشمل المواد المتنقلة).' }),
-          r.students.length ? r.students.map(function (s) { return studentCard(s, r.month); }) : empty('لا توجد حالات غياب بواقع ' + r.min_days + ' أيام فأعلى لهذا الصف خلال هذا الشهر'));
-      }).catch(function (e) { mount(out, h('div', { class: 'note', text: e.message })); });
+      if (!gid) { mount(out, empty('اختر الصف لعرض التقرير')); return; }
+      mount(out, skeleton(4));
+      get('/api/admin/reports/monthly?' + qs({ month: curMonth, group_id: gid })).then(function (r) {
+        mount(out, h('div', { class: 'card' },
+          h('h3', { text: 'كشف متابعة الغياب لشهر: ' + r.month + ' (' + r.group.name + ')' }),
+          h('p', { class: 'muted small' }, 'إجمالي أيام الغياب: ' + r.totals.absence_days + ' يوم | الطلاب الذين بلغوا حد الإنذار: ' + r.students.length),
+          h('div', { class: 't-wrap' }, h('table', null,
+            h('thead', null, h('tr', null, h('th', { text: 'الرقم' }), h('th', { text: 'اسم الطالب' }), h('th', { text: 'أيام الغياب' }), h('th', { text: 'الإجراء المستحق' }))),
+            h('tbody', null, r.students.map(function (s) {
+              return h('tr', null,
+                h('td', null, ltr(s.number)),
+                h('td', null, h('b', { text: s.name })),
+                h('td', { class: 'count bad' }, s.absence_days),
+                h('td', null, s.action ? h('span', { class: 'badge', style: 'color:' + s.action.color + ';border-color:' + s.action.color, text: s.action.label }) : '—'));
+            }))))));
+      }).catch(fail);
     }
-    function tile(n, label) { return h('div', { class: 'tile' }, h('b', { text: n }), h('span', { text: label })); }
-    function chipsFor(s, days, kind) {
-      return h('div', { class: 'chips' }, days.map(function (d) {
-        var periods = d.items.map(function (i) { return i.period; }).join('،');
-        return h('span', { class: 'chip' }, ltr(d.date), h('span', { class: 'muted small', text: 'ح ' + periods }),
-          h('button', { type: 'button', title: 'حذف', 'aria-label': 'حذف ' + d.date, onclick: function () {
-            confirmBox('حذف السجل؟', s.name + ' — ' + d.date + '. يتحول إلى حاضر ويبقى أثره في سجل التدقيق.', 'حذف', true).then(function (ok) {
-              if (ok) post('/api/admin/entries/clear', { student_id: s.id, date: d.date, kind: kind }).then(function () { toast('تم الحذف'); load(); }).catch(fail);
-            });
-          } }, icon('x')));
-      }));
-    }
-    function studentCard(s) {
-      var action = s.action ? h('span', { class: 'action', text: s.action.label }) : null;
-      if (action) action.style.setProperty('--c', s.action.color);
-      return h('article', { class: 'stu' },
-        h('header', null, h('span', { class: 'num', text: s.number }), h('span', { class: 'nm', text: s.name }), h('b', { class: 'count bad', text: s.absence_days + ' أيام غياب' }), action),
-        h('div', { class: 'line' }, h('span', { class: 'muted', text: 'تواريخ الغياب:' }), chipsFor(s, s.absences, 'absent')),
-        s.late_days.length ? h('div', { class: 'line' }, h('span', { class: 'muted', text: 'التأخر:' }), chipsFor(s, s.late_days, 'late')) : null);
-    }
-    load();
   }
 
   /* ---------------------------------------------------------------- 8) لوحة الإدارة */
-  // قراءة سطور الطلاب: "رقم - اسم" (يقبل - أو , أو tab أو مسافة)
-  function parseStudents(text) {
-    var out = []; var skipped = 0;
-    text.split(/\r?\n/).forEach(function (line) {
-      line = line.trim(); if (!line) return;
-      var m = arNum(line).match(/^([A-Za-z0-9._]+)\s*[-–—,،:\t ]\s*(.+)$/);
-      if (m && m[2].trim()) out.push({ number: m[1], name: m[2].trim() }); else skipped++;
-    });
-    return { list: out, skipped: skipped };
-  }
-  function parseNames(text) {
-    var seen = {}; var out = [];
-    text.split(/\r?\n/).forEach(function (l) {
-      var n = l.replace(/^[\s\d.\-–)(،:]+/, '').trim();
-      if (n && !seen[n]) { seen[n] = 1; out.push(n); }
-    });
-    return out;
-  }
-  function chunks(list, size) { var o = []; for (var i = 0; i < list.length; i += size) o.push(list.slice(i, i + size)); return o; }
-  // تشغيل طلبات متتابعة (الخادم المجاني يحدّ عدد العمليات في الطلب الواحد)
-  function sequence(parts, fn, progress) {
-    var results = []; var p = Promise.resolve();
-    parts.forEach(function (part, i) { p = p.then(function () { if (progress) progress(i + 1, parts.length); return fn(part, i); }).then(function (r) { results.push(r); }); });
-    return p.then(function () { return results; });
-  }
-
   function viewClasses(host) {
-    var name = h('input', { type: 'text', maxlength: '80', placeholder: 'مثال: الصف العاشر / 1  أو  مادة الرياضيات' });
-    var kind = h('select', null, h('option', { value: 'basic', text: 'صف أساسي (ثابت)' }), h('option', { value: 'mobile', text: 'مادة متنقلة / مجموعة خاصة' }));
-    var text = h('textarea', { placeholder: '101 - أحمد محمد\n102 - سالم علي', dir: 'auto' });
-    var info = h('p', { class: 'muted small' });
-    var add = btn('إضافة الصف', { kind: 'primary', ic: 'plus' });
-    var list = h('div');
+    var nameIn = h('input', { type: 'text', placeholder: 'مثال: التاسع / 1 أو فيزياء متنقلة' });
+    var kindSel = h('select', null, h('option', { value: 'basic', text: 'صف أساسي' }), h('option', { value: 'mobile', text: 'مادة متنقلة' }));
+    var addBtn = btn('إضافة الصف', { kind: 'primary', ic: 'plus' });
+    var list = h('div', { class: 'grid' });
+    var studentsPanel = h('div');
 
-    var entryMode = 'single';
-    var entryHost = h('div');
-    var singleNum = h('input', { type: 'text', maxlength: '30', placeholder: 'مثال: 101', 'aria-label': 'رقم الطالب' });
-    var singleName = h('input', { type: 'text', maxlength: '120', placeholder: 'مثال: أحمد محمد', 'aria-label': 'اسم الطالب' });
-    var addSingleToListBtn = btn('أضف الطالب للقائمة +', { sm: true, kind: 'primary', ic: 'plus' });
-    var chipsContainer = h('div', { class: 'stu-added-list' });
-
-    function updateCount() {
-      var p = parseStudents(text.value);
-      info.textContent = p.list.length ? ('إجمالي الطلاب المضافين: ' + p.list.length + ' طالب' + (p.skipped ? ' — ' + p.skipped + ' سطر سيُتجاهل' : '')) : '';
-      mount(chipsContainer, p.list.length ? p.list.map(function (s, idx) {
-        var delBtn = h('button', {
-          class: 'del',
-          type: 'button',
-          title: 'حذف',
-          'aria-label': 'حذف ' + s.name,
-          onclick: function () {
-            var lines = text.value.split(/\r?\n/).filter(function (l) { return l.trim(); });
-            lines.splice(idx, 1);
-            text.value = lines.join('\n');
-            updateCount();
-          }
-        }, icon('x'));
-        return h('span', { class: 'stu-chip' },
-          h('span', { class: 'num', text: s.number }),
-          h('span', { text: s.name }),
-          delBtn);
-      }) : h('span', { class: 'muted small', text: 'لم يُضف أي طالب بعد. أدخل رقم واسم الطالب واضغط «أضف الطالب للقائمة +» أو بدّل للخيار الجماعي للصق قائمة كاملة.' }));
-    }
-
-    addSingleToListBtn.onclick = function () {
-      var n = singleNum.value.trim();
-      var m = singleName.value.trim();
-      if (!n || !m) return toast('اكتب رقم الطالب واسم الطالب أولاً', true);
-      text.value = (text.value.trim() ? text.value.trim() + '\n' : '') + n + ' - ' + m;
-      singleNum.value = '';
-      singleName.value = '';
-      singleNum.focus();
-      updateCount();
-      toast('أضيف الطالب إلى قائمة الصف');
+    addBtn.onclick = function () {
+      var n = nameIn.value.trim();
+      if (!n) return toast('اكتب اسم الصف', true);
+      busy(addBtn, function () { return post('/api/admin/groups', { name: n, kind: kindSel.value }); })
+        .then(function () { nameIn.value = ''; toast('تمت إضافة الصف'); loadGroups(true).then(paint).catch(fail); }).catch(fail);
     };
 
-    singleName.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); addSingleToListBtn.click(); }
-    });
-    singleNum.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); singleName.focus(); }
-    });
-
-    text.addEventListener('input', updateCount);
-
-    function paintEntryMode() {
-      var switcher = h('div', { class: 'tab-switch' },
-        h('button', {
-          type: 'button',
-          class: entryMode === 'single' ? 'active' : '',
-          onclick: function () { entryMode = 'single'; paintEntryMode(); }
-        }, icon('userPlus'), 'إضافة طالب فردي (طالب واحد)'),
-        h('button', {
-          type: 'button',
-          class: entryMode === 'bulk' ? 'active' : '',
-          onclick: function () { entryMode = 'bulk'; paintEntryMode(); }
-        }, icon('fileText'), 'لصق قائمة كاملة (نص متعدد)'));
-
-      if (entryMode === 'single') {
-        mount(entryHost, switcher,
-          h('div', { class: 'grid' },
-            field('رقم الطالب (المفتاح)', singleNum, 'الرقم يربط الطالب بالصف والمواد المتنقلة تلقائياً.'),
-            field('اسم الطالب', singleName)),
-          h('div', { class: 'row' }, addSingleToListBtn),
-          h('div', { class: 'small muted', text: 'الطلاب المضافون للصف حتى الآن:' }),
-          chipsContainer);
-      } else {
-        mount(entryHost, switcher,
-          field('قائمة الطلاب (رقم الطالب - اسم الطالب في كل سطر)', text, 'يمكنك كتابة أو لصق قائمة الطلاب كاملة مباشرة هنا.'),
-          chipsContainer);
-      }
-      updateCount();
+    function paint(groups) {
+      mount(list, groups.map(function (g) {
+        return h('div', { class: 'card' },
+          h('div', { class: 'row between' },
+            h('b', { text: g.name }),
+            h('span', { class: 'badge', text: g.kind === 'basic' ? 'أساسي' : 'متنقل' })),
+          h('p', { class: 'muted small' }, 'عدد الطلاب: ' + g.student_count),
+          h('div', { class: 'row end' },
+            btn('إدارة الطلاب', { sm: true, on: function () { openStudentsModal(g); } }),
+            btn('حذف الصف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
+              confirmBox('حذف الصف؟', 'سيُحذف صف «' + g.name + '» وجميع تسجيلات طلابه.', 'حذف نهائي', true).then(function (ok) {
+                if (ok) api('DELETE', '/api/admin/groups/' + g.id).then(function () { toast('تم حذف الصف'); loadGroups(true).then(paint).catch(fail); }).catch(fail);
+              });
+            } })));
+      }));
     }
 
-    paintEntryMode();
-
-    add.onclick = function () {
-      var p = parseStudents(text.value);
-      if (!name.value.trim()) return toast('اكتب اسم الصف', true);
-      if (!p.list.length) return toast('أضف طالباً واحداً على الأقل إلى الصف', true);
-      var parts = chunks(p.list, 200);
-      busy(add, function () {
-        return post('/api/admin/groups', { name: name.value, kind: kind.value, students: parts[0] }).then(function (r) {
-          var rest = parts.slice(1);
-          return sequence(rest, function (c) { return post('/api/admin/groups/' + r.id + '/students', { students: c }); }, function (i, n) { info.textContent = 'جاري الحفظ… ' + i + '/' + n; })
-            .then(function () { return r; });
-        });
-      }).then(function (r) {
-        toast('تمت إضافة «' + name.value + '» — طلاب جدد: ' + r.new_students + '، مرتبطون بصفوفهم: ' + r.linked);
-        name.value = ''; text.value = ''; info.textContent = '';
-        updateCount(); refresh();
-      }).catch(fail);
-    };
-
-    host.append(h('div', { class: 'card' },
-      h('h2', null, h('span', { text: 'إضافة صف أو مادة متنقلة' }), icon('school')),
-      h('div', { class: 'stack' },
-        h('div', { class: 'grid' }, field('اسم الصف / المادة', name), field('النوع', kind)),
-        entryHost,
-        info,
-        h('div', { class: 'row end' }, add))), list);
-
-    function refresh() { loadGroups(true).then(paint).catch(fail); }
-    function paint() {
-      var cats = [['basic', 'الصفوف الأساسية'], ['mobile', 'المواد المتنقلة']];
-      mount(list,
-        h('div', { class: 'page-head noprint' },
-          h('h2', { text: 'إدارة الصفوف والطلاب' }),
-          h('span', { class: 'badge', text: 'إجمالي الصفوف والمواد: ' + S.groups.length })),
-        cats.map(function (c) {
-          var gs = S.groups.filter(function (g) { return g.kind === c[0]; });
-          return h('div', { class: 'card' }, h('h3', { text: c[1] + ' (' + gs.length + ')' }), gs.length ? gs.map(groupRow) : empty('لا توجد صفوف مسجلة في هذا القسم'));
-        }));
-    }
-    function groupRow(g) {
-      var panel = h('div', { hidden: true, class: 'stack' });
-      var open = false;
-      var toggle = btn('الطلاب', { sm: true, ic: 'users', on: function () {
-        open = !open; panel.hidden = !open;
-        if (open) studentsPanel(panel, g);
-      } });
-      var del = btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
-        confirmBox('حذف «' + g.name + '»؟', 'سيُحذف الصف وكل سجلات غيابه نهائياً.', 'حذف نهائي', true).then(function (ok) {
-          if (ok) busy(del, function () { return api('DELETE', '/api/admin/groups/' + g.id); }).then(function () { toast('تم الحذف'); refresh(); }).catch(fail);
-        });
-      } });
-      return h('div', null, h('div', { class: 'list-row' }, h('b', { class: 'grow', text: g.name }), h('span', { class: 'muted', text: g.student_count + ' طالب' }), toggle, del), panel);
-    }
-    function studentsPanel(panel, g) {
-      mount(panel, skeleton(2));
+    function openStudentsModal(g) {
       get('/api/groups/' + g.id + '/students').then(function (r) {
-        var q = h('input', { type: 'search', placeholder: 'ابحث بالاسم أو الرقم في «' + g.name + '»…', 'aria-label': 'بحث' });
-        var rows = h('div');
-        function show() {
-          var f = arNum(q.value.trim());
-          var list = r.students.filter(function (s) { return !f || s.name.indexOf(f) >= 0 || s.number.indexOf(f) >= 0; });
-          mount(rows, list.length ? list.map(function (s) {
-            return h('div', { class: 'list-row' },
-              h('span', { class: 'muted', text: s.number }),
-              h('span', { class: 'grow', text: s.name }),
-              btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
-                confirmBox('حذف الطالب؟', s.name + ' من «' + g.name + '».', 'حذف', true).then(function (ok) {
-                  if (ok) api('DELETE', '/api/admin/groups/' + g.id + '/students/' + s.id).then(function () {
-                    toast('تم حذف الطالب من الصف');
-                    studentsPanel(panel, g);
+        var numIn = h('input', { type: 'text', placeholder: 'رقم الطالب' });
+        var nameIn = h('input', { type: 'text', placeholder: 'اسم الطالب' });
+        var addOne = btn('إضافة طالب', { sm: true, kind: 'primary', ic: 'plus' });
+        var rowsHost = h('div', { class: 't-wrap' });
+
+        function drawRows() {
+          mount(rowsHost, h('table', null,
+            h('thead', null, h('tr', null, h('th', { text: 'الرقم' }), h('th', { text: 'الاسم' }), h('th', { text: 'حذف' }))),
+            h('tbody', null, r.students.map(function (s) {
+              return h('tr', null,
+                h('td', null, ltr(s.number)),
+                h('td', null, h('b', { text: s.name })),
+                h('td', null, btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
+                  api('DELETE', '/api/admin/groups/' + g.id + '/students/' + s.id).then(function () {
+                    r.students = r.students.filter(function (x) { return x.id !== s.id; });
+                    drawRows();
                     loadGroups(true).then(paint).catch(fail);
                   }).catch(fail);
-                });
-              } }));
-          }) : empty('لا توجد نتائج'));
-        }
-        q.addEventListener('input', show); show();
-
-        var addMode = 'single';
-        var addHost = h('div');
-        var sNumIn = h('input', { type: 'text', maxlength: '30', placeholder: 'مثال: 105', 'aria-label': 'رقم الطالب' });
-        var sNmIn = h('input', { type: 'text', maxlength: '120', placeholder: 'مثال: سالم الكعبي', 'aria-label': 'اسم الطالب' });
-        var addOneBtn = btn('إضافة هذا الطالب للصف', { sm: true, kind: 'primary', ic: 'userPlus' });
-        var more = h('textarea', { placeholder: 'طلاب جدد: رقم - اسم في كل سطر', dir: 'auto' });
-        var addMore = btn('إضافة قائمة الطلاب', { sm: true, kind: 'primary', ic: 'plus' });
-
-        addOneBtn.onclick = function () {
-          var num = sNumIn.value.trim();
-          var nm = sNmIn.value.trim();
-          if (!num || !nm) return toast('اكتب رقم الطالب واسم الطالب أولاً', true);
-          busy(addOneBtn, function () {
-            return post('/api/admin/groups/' + g.id + '/students', { students: [{ number: num, name: nm }] });
-          }).then(function () {
-            toast('تمت إضافة الطالب «' + nm + '» بنجاح');
-            sNumIn.value = '';
-            sNmIn.value = '';
-            studentsPanel(panel, g);
-            loadGroups(true).then(paint).catch(fail);
-          }).catch(fail);
-        };
-
-        sNmIn.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { e.preventDefault(); addOneBtn.click(); }
-        });
-        sNumIn.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { e.preventDefault(); sNmIn.focus(); }
-        });
-
-        addMore.onclick = function () {
-          var p = parseStudents(more.value); if (!p.list.length) return toast('لا يوجد طلاب صالحون في النص', true);
-          busy(addMore, function () {
-            return sequence(chunks(p.list, 200), function (c) { return post('/api/admin/groups/' + g.id + '/students', { students: c }); });
-          }).then(function () {
-            toast('تمت إضافة الطلاب بنجاح');
-            more.value = '';
-            studentsPanel(panel, g);
-            loadGroups(true).then(paint).catch(fail);
-          }).catch(fail);
-        };
-
-        function paintAddMode() {
-          var switcher = h('div', { class: 'tab-switch' },
-            h('button', {
-              type: 'button',
-              class: addMode === 'single' ? 'active' : '',
-              onclick: function () { addMode = 'single'; paintAddMode(); }
-            }, icon('userPlus'), 'إضافة طالب واحد فقط (فردي)'),
-            h('button', {
-              type: 'button',
-              class: addMode === 'bulk' ? 'active' : '',
-              onclick: function () { addMode = 'bulk'; paintAddMode(); }
-            }, icon('fileText'), 'لصق قائمة طلاب (نص متعدد)'));
-
-          if (addMode === 'single') {
-            mount(addHost, switcher,
-              h('div', { class: 'grid' },
-                field('رقم الطالب', sNumIn),
-                field('اسم الطالب', sNmIn)),
-              h('div', { class: 'row end' }, addOneBtn));
-          } else {
-            mount(addHost, switcher,
-              field('طلاب جدد: رقم - اسم في كل سطر', more),
-              h('div', { class: 'row end' }, addMore));
-          }
+                } })));
+            }))));
         }
 
-        paintAddMode();
+        addOne.onclick = function () {
+          var num = numIn.value.trim(); var nm = nameIn.value.trim();
+          if (!num || !nm) return toast('اكتب رقم الطالب واسمه', true);
+          busy(addOne, function () { return post('/api/admin/groups/' + g.id + '/students', { students: [{ number: num, name: nm }] }); })
+            .then(function () {
+              toast('تمت إضافة الطالب'); numIn.value = ''; nameIn.value = '';
+              get('/api/groups/' + g.id + '/students').then(function (res) { r.students = res.students; drawRows(); loadGroups(true).then(paint).catch(fail); });
+            }).catch(fail);
+        };
 
-        mount(panel, h('div', { class: 'card' },
-          h('h3', { text: 'طلاب «' + g.name + '» (' + r.students.length + ' طالب)' }),
-          h('div', { class: 'stack' },
-            q,
-            rows,
-            h('div', { class: 'sep' }),
-            h('h4', { text: 'إضافة طلاب إلى «' + g.name + '»' }),
-            addHost)));
-      }).catch(function (e) { mount(panel, h('div', { class: 'note', text: e.message })); });
+        drawRows();
+        overlay([
+          h('h3', { text: 'إدارة طلاب: ' + g.name }),
+          h('div', { class: 'grid', style: 'margin: 14px 0;' }, field('رقم الطالب', numIn), field('اسم الطالب', nameIn)),
+          h('div', { class: 'row end', style: 'margin-bottom: 14px;' }, addOne),
+          rowsHost,
+          h('div', { class: 'acts' }, btn('إغلاق', { on: function () { document.querySelector('.overlay')?.remove(); } }))
+        ]);
+      }).catch(fail);
     }
+
+    host.append(
+      h('div', { class: 'card' },
+        h('h2', { text: 'إضافة صف أو مادة متنقلة' }),
+        h('div', { class: 'grid' }, field('اسم الصف / المادة', nameIn), field('نوع الصف', kindSel)),
+        h('div', { class: 'row end' }, addBtn)),
+      h('div', { class: 'page-head' }, h('h3', { text: 'قائمة الصفوف' })),
+      list);
+
     loadGroups().then(paint).catch(fail);
   }
 
+  // إدارة المعلمين والتحكم بكلمات المرور في لوحة الإدارة
   function viewTeachers(host) {
-    var teachers = [];
-    var subTab = 'single';
-    var q = h('input', { type: 'search', placeholder: 'ابحث بالاسم (عربي أو إنجليزي) أو اسم المستخدم…', 'aria-label': 'بحث' });
-    var roleFilter = h('select', { 'aria-label': 'تصفية حسب الصلاحية' },
-      h('option', { value: '', text: 'جميع الصلاحيات' }),
-      h('option', { value: 'teacher', text: 'معلمون فقط' }),
-      h('option', { value: 'viewer', text: 'مشاهدون فقط (اطلاع)' }),
-      h('option', { value: 'admin', text: 'إدارة ومشرفون فقط' }));
-    var statusFilter = h('select', { 'aria-label': 'تصفية حسب الحالة' },
-      h('option', { value: '', text: 'جميع الحالات' }),
-      h('option', { value: 'active', text: 'حسابات نشطة' }),
-      h('option', { value: 'pending', text: 'بانتظار تغيير كلمة المرور' }));
+    var pwCard = h('div', { class: 'pw-card' });
+    var adminPwCard = h('div', { class: 'card' });
+    var rosterCard = h('div', { class: 'card' });
+    var teachersRoster = [];
 
-    var statsBox = h('div', { class: 'tiles' });
-    var fbBanner = h('div');
-    var creatorBox = h('div');
-    var resultsBox = h('div');
-    var list = h('div');
+    // 1) بطاقة التحكم بكلمة مرور المعلمين
+    function paintTeacherPwControl() {
+      mount(pwCard, skeleton(3));
+      get('/api/admin/passwords').then(function (res) {
+        var pw = res.teacher_password || '';
+        var isMasked = true;
+        var pwSpan = h('span', { class: 'pw-val', text: '••••••••••••' });
+        var toggleMaskBtn = btn('إظهار', { sm: true, ic: 'eye', on: function () {
+          isMasked = !isMasked;
+          pwSpan.textContent = isMasked ? '••••••••••••' : pw;
+          toggleMaskBtn.textContent = isMasked ? 'إظهار' : 'إخفاء';
+        } });
+        var copyBtn = btn('نسخ كلمة المرور', { sm: true, ic: 'copy', kind: 'primary', on: function () {
+          copyText(pw, 'تم نسخ كلمة مرور المعلمين: ' + pw);
+        } });
 
-    function paintFbBanner() {
-      var syncBtn = btn('مزامنة مع Google Firebase', { sm: true, ic: 'refresh' });
-      syncBtn.onclick = function () {
-        confirmBox('مزامنة قاعدة البيانات مع Google Firebase؟', 'سيتم إرسال وتحديث جميع الحسابات والصفوف والإعدادات في Cloud Firestore وFirebase Auth.', 'بدء المزامنة').then(function (ok) {
-          if (!ok) return;
-          busy(syncBtn, function () { return post('/api/admin/firebase/sync'); }).then(function (res) {
-            toast(res.message || 'تمت مزامنة البيانات في Google Firebase بنجاح');
-            loadList();
-          }).catch(fail);
-        });
-      };
-      mount(fbBanner, h('div', { class: 'fb-banner' },
-        h('div', { class: 'fb-info' },
-          h('span', { class: 'fb-dot' }),
-          icon('database'),
-          h('div', null,
-            h('b', { text: 'Google Firebase مدمج ومفعل' }),
-            h('div', { class: 'small muted', text: 'جميع الحسابات تُنشأ في Firebase Auth وتُخزن في Cloud Firestore فورياً.' }))),
-        syncBtn));
-    }
-
-    function paintStats() {
-      var total = teachers.length;
-      var teachersCnt = teachers.filter(function (t) { return (t.role || 'teacher') === 'teacher'; }).length;
-      var viewersCnt = teachers.filter(function (t) { return t.role === 'viewer'; }).length;
-      var adminsCnt = teachers.filter(function (t) { return t.role === 'admin'; }).length;
-      var pendingCnt = teachers.filter(function (t) { return t.must_change; }).length;
-
-      mount(statsBox,
-        h('div', { class: 'tile accent' }, h('b', { text: total }), h('span', { text: 'إجمالي الحسابات' })),
-        h('div', { class: 'tile' }, h('b', { text: teachersCnt }), h('span', { text: 'معلمون' })),
-        h('div', { class: 'tile' }, h('b', { text: viewersCnt }), h('span', { text: 'مشاهدون (اطلاع)' })),
-        h('div', { class: 'tile gold' }, h('b', { text: adminsCnt }), h('span', { text: 'إدارة ومشرفون' })),
-        h('div', { class: 'tile warn' }, h('b', { text: pendingCnt }), h('span', { text: 'بانتظار تفعيل كلمة المرور' })));
-    }
-
-    function paintCreator() {
-      var singleTabBtn = h('button', {
-        type: 'button',
-        class: 'form-tab' + (subTab === 'single' ? ' active' : ''),
-        onclick: function () { subTab = 'single'; paintCreator(); }
-      }, icon('userPlus'), 'إنشاء حساب فردي (عربي أو إنجليزي)');
-
-      var bulkTabBtn = h('button', {
-        type: 'button',
-        class: 'form-tab' + (subTab === 'bulk' ? ' active' : ''),
-        onclick: function () { subTab = 'bulk'; paintCreator(); }
-      }, icon('users'), 'إنشاء دفعة معلمين (سريع)');
-
-      var subtabsNav = h('div', { class: 'form-tabs' }, singleTabBtn, bulkTabBtn);
-      var content = subTab === 'single' ? renderSingleForm() : renderBulkForm();
-      mount(creatorBox, subtabsNav, content);
-    }
-
-    function renderSingleForm() {
-      var nameIn = h('input', { type: 'text', required: true, maxlength: '100', placeholder: 'مثال: أحمد بن سعيد الحارثي  أو  John Smith' });
-      var unameIn = h('input', { type: 'text', maxlength: '80', dir: 'auto', placeholder: 'مثال: أحمد أو ahmed_s (اتركه فارغاً للتوليد التلقائي)' });
-      var roleSel = h('select', null,
-        h('option', { value: 'teacher', text: 'معلم (Teacher)' }),
-        h('option', { value: 'viewer', text: 'مشاهد (Viewer - اطلاع فقط)' }),
-        h('option', { value: 'admin', text: 'إداري (Admin / Supervisor)' }));
-      var pwIn = h('input', { type: 'text', dir: 'ltr', minlength: '8', maxlength: '100', placeholder: 'كلمة مرور مخصصة أو انقر على توليد' });
-      var mustChBox = h('input', { type: 'checkbox', checked: true });
-      var genPwBtn = btn('توليد كلمة قوية', { sm: true, ic: 'sparkles', on: function () { pwIn.value = newRandomPassword(); } });
-
-      var saveBtn = btn('إنشاء الحساب وتخزينه في Firebase', { kind: 'primary', ic: 'check' });
-      saveBtn.onclick = function () {
-        var n = nameIn.value.trim();
-        if (!n) return toast('اكتب اسم صاحب الحساب', true);
-        var u = unameIn.value.trim();
-        var r = roleSel.value;
-        var p = pwIn.value.trim();
-        var mc = mustChBox.checked;
-
-        busy(saveBtn, function () {
-          return post('/api/admin/accounts', {
-            name: n,
-            username: u || undefined,
-            role: r,
-            password: p || undefined,
-            must_change: mc
-          }).then(function (res) {
-            toast('تم إنشاء الحساب وتخزينه في Google Firebase بنجاح');
-            nameIn.value = ''; unameIn.value = ''; pwIn.value = '';
-            showCredentials([res.account], [], []);
-            loadList();
+        var genBtn = btn('توليد كلمة مرور عشوائية جديدة', { sm: true, ic: 'sparkles', on: function () {
+          confirmBox('توليد كلمة مرور عشوائية جديدة للمعلمين؟', 'سيتم توليد كلمة مرور جديدة فوراً وإنهاء الجلسات الحالية للمعلمين لضمان الأمان.', 'توليد وتحديث').then(function (ok) {
+            if (!ok) return;
+            busy(genBtn, function () { return put('/api/admin/passwords/teacher', { generate: true }); })
+              .then(function (upRes) {
+                toast('تم توليد وتحديث كلمة المرور للمعلمين بنجاح');
+                paintTeacherPwControl();
+              }).catch(fail);
           });
-        }).catch(fail);
-      };
+        } });
 
-      return h('div', { class: 'stack' },
-        h('div', { class: 'grid' },
-          field('الاسم الكامل (عربي أو إنجليزي)', nameIn, 'يقبل أي اسم باللغة العربية أو الإنجليزية.'),
-          field('اسم المستخدم (اختياري)', unameIn, 'عربي أو إنجليزي، أو اتركه فارغاً لتوليد t01 تلقائياً.')),
-        h('div', { class: 'grid' },
-          field('نوع الحساب / الصلاحية', roleSel, 'المعلم يرصد الغياب، والمشاهد يطلع فقط، والإدارة تدير المنصة.'),
-          field('كلمة المرور', h('div', { class: 'row' }, h('div', { class: 'grow' }, pwIn), genPwBtn), 'اتركها فارغة للتوليد العشوائي التلقائي.')),
-        h('label', { class: 'row' },
-          mustChBox,
-          h('span', { class: 'small', text: 'إلزام المستخدم بتغيير كلمة المرور عند أول تسجيل دخول' })),
-        h('div', { class: 'row end' }, saveBtn));
-    }
+        var customPwIn = h('input', { type: 'text', dir: 'ltr', placeholder: 'اكتب كلمة مرور مخصصة (6 أحرف فأكثر)…' });
+        var saveCustomBtn = btn('حفظ المخصصة', { sm: true, on: function () {
+          var val = customPwIn.value.trim();
+          if (val.length < 4) return toast('كلمة المرور يجب ألا تقل عن 4 أحرف', true);
+          busy(saveCustomBtn, function () { return put('/api/admin/passwords/teacher', { password: val }); })
+            .then(function () {
+              toast('تم تحديث كلمة مرور المعلمين بنجاح');
+              customPwIn.value = '';
+              paintTeacherPwControl();
+            }).catch(fail);
+        } });
 
-    function renderBulkForm() {
-      var text = h('textarea', { placeholder: 'أحمد بن سعيد\nسالم بن حمود\nJohn Smith\nAlexander Brown', dir: 'auto' });
-      var progress = h('p', { class: 'muted small' });
-      var add = btn('إنشاء الدفعة وتخزينها في Firebase', { kind: 'primary', ic: 'plus' });
-
-      add.onclick = function () {
-        var names = parseNames(text.value);
-        if (!names.length) return toast('اكتب أسماء المعلمين', true);
-        var made = []; var skipped = []; var failed = [];
-        busy(add, function () {
-          return sequence(chunks(names, 8), function (c) {
-            return post('/api/admin/teachers', { names: c }).then(function (r) {
-              made = made.concat(r.created);
-              skipped = skipped.concat(r.skipped);
-              failed = failed.concat(r.failed);
-            });
-          }, function (i, n) { progress.textContent = 'جاري الإنشاء في Firebase… ' + i + '/' + n; });
-        }).then(function () {
-          progress.textContent = ''; text.value = '';
-          showCredentials(made, skipped, failed); loadList();
-        }).catch(function (e) {
-          progress.textContent = ''; fail(e);
-          if (made.length) showCredentials(made, skipped, failed); loadList();
-        });
-      };
-
-      return h('div', { class: 'stack' },
-        field('أسماء المعلمين (اسم في كل سطر — عربي أو إنجليزي)', text, 'سيتم توليد أسماء مستخدمين وكلمات مرور وتخزينها في Google Firebase.'),
-        progress,
-        h('div', { class: 'row end' }, add));
-    }
-
-    function showCredentials(made, skipped, failed) {
-      if (!made.length && !skipped.length && !failed.length) {
-        mount(resultsBox); return;
-      }
-      var copyAllBtn = btn('نسخ بيانات الدخول', { sm: true, ic: 'copy', on: function () {
-        var txt = made.map(function (t) {
-          return 'الاسم: ' + t.name + ' | اسم المستخدم: ' + t.username + ' | كلمة المرور: ' + t.password;
-        }).join('\n');
-        copyText(txt, 'تم نسخ بيانات الدخول لـ ' + made.length + ' حساب');
-      } });
-
-      mount(resultsBox, h('div', { class: 'cred-box' },
-        h('div', { class: 'head' },
-          h('h3', { text: 'بيانات الدخول للحسابات المنشأة حديثاً (' + made.length + ')' }),
-          h('span', { class: 'badge ok' }, icon('checkCircle'), 'مخزن في Google Firebase')),
-        h('div', { class: 'note info small', text: 'تم حفظ الحسابات في Google Firebase. انسخ أو اطبع بيانات الدخول الآن لتسليمها للمستخدمين (كلمات المرور مشفرة ولا تظهر مرة أخرى).' }),
-        h('div', { class: 'row noprint' },
-          copyAllBtn,
-          btn('طباعة البطاقات', { sm: true, ic: 'print', on: function () { printCards(made); } }),
-          btn('تنزيل ملف CSV', { sm: true, ic: 'download', on: function () {
-            downloadCSV('accounts-login.csv', [['الاسم', 'اسم المستخدم', 'كلمة المرور', 'الصلاحية']].concat(made.map(function (t) {
-              return [t.name, t.username, t.password, t.role === 'admin' ? 'إدارة' : (t.role === 'viewer' ? 'مشاهد' : 'معلم')];
-            })));
-          } })),
-        skipped.length ? h('p', { class: 'muted small', text: 'تم تخطي ' + skipped.length + ' اسم موجود مسبقاً.' }) : null,
-        failed.length ? h('p', { class: 'err small', text: 'تعذر إنشاء ' + failed.length + ' حساب: ' + failed.map(function (f) { return f.name; }).join('، ') }) : null,
-        made.length ? h('div', { class: 't-wrap' }, h('table', null,
-          h('thead', null, h('tr', null, h('th', { text: 'الاسم' }), h('th', { text: 'اسم المستخدم' }), h('th', { text: 'كلمة المرور' }), h('th', { text: 'الصلاحية' }), h('th', { text: 'نسخ' }))),
-          h('tbody', null, made.map(function (t) {
-            var roleLabel = t.role === 'admin' ? 'إدارة' : (t.role === 'viewer' ? 'مشاهد' : 'معلم');
-            var roleBadgeClass = t.role === 'admin' ? 'gold' : (t.role === 'viewer' ? '' : 'accent');
-            return h('tr', null,
-              h('td', null, h('b', { text: t.name })),
-              h('td', null, ltr(t.username)),
-              h('td', { class: 'cred' }, ltr(t.password)),
-              h('td', null, h('span', { class: 'badge ' + roleBadgeClass, text: roleLabel })),
-              h('td', null, btn('نسخ', { sm: true, ic: 'copy', on: function () {
-                copyText('اسم المستخدم: ' + t.username + '\nكلمة المرور: ' + t.password, 'تم نسخ بيانات ' + t.name);
-              } })));
-          })))) : null));
-    }
-
-    function printCards(items) {
-      var sheet = h('div', { class: 'cred-sheet' }, items.map(function (t) {
-        var roleLabel = t.role === 'admin' ? 'إدارة' : (t.role === 'viewer' ? 'مشاهد' : 'معلم');
-        return h('div', { class: 'cred-card' },
-          h('b', { text: S.pub.school_name || 'منصة المدرسة' }),
-          h('div', null, 'الاسم: ', h('b', { text: t.name })),
-          h('div', null, 'اسم المستخدم: ', ltr(t.username)),
-          h('div', { class: 'cred' }, 'كلمة المرور: ', ltr(t.password)),
-          h('div', { class: 'small muted', text: 'الصلاحية: ' + roleLabel }));
-      }));
-      document.body.append(sheet); document.body.classList.add('print-cred');
-      var clean = function () { sheet.remove(); document.body.classList.remove('print-cred'); window.removeEventListener('afterprint', clean); };
-      window.addEventListener('afterprint', clean); window.print();
-    }
-
-    function loadList() {
-      get('/api/admin/teachers').then(function (r) {
-        teachers = r.teachers || [];
-        paintStats();
-        paintList();
+        mount(pwCard,
+          h('div', { class: 'row between' },
+            h('h2', { text: 'كلمة مرور بوابة المعلمين (الموحدة)' }),
+            h('span', { class: 'badge accent', text: 'دخول موحد' })),
+          h('p', { class: 'muted small', text: 'يستخدم جميع المعلمين هذه الكلمة للدخول إلى بوابة المعلمين واختيار أسمائهم من القائمة. عند تغيير الكلمة تنتهي جلسات المعلمين السابقة فوراً لضمان الأمان.' }),
+          h('div', { class: 'pw-display-box' },
+            pwSpan,
+            h('div', { class: 'row' }, toggleMaskBtn, copyBtn)),
+          h('div', { class: 'row', style: 'margin-top: 14px; flex-wrap: wrap;' },
+            genBtn,
+            h('div', { class: 'grow row', style: 'margin-inline-start: 12px;' },
+              customPwIn, saveCustomBtn)));
       }).catch(fail);
     }
 
-    function paintList() {
-      var f = q.value.trim().toLowerCase();
-      var rFilter = roleFilter.value;
-      var sFilter = statusFilter.value;
+    // 2) بطاقة تغيير كلمة مرور الإدارة
+    function paintAdminPwChange() {
+      var curIn = h('input', { type: 'password', dir: 'ltr', required: true, autocomplete: 'current-password', placeholder: 'أدخل كلمة المرور الحالية للإدارة' });
+      var newIn = h('input', { type: 'password', dir: 'ltr', required: true, minlength: '6', autocomplete: 'new-password', placeholder: 'أدخل كلمة المرور الجديدة (6 أحرف فأكثر)' });
+      var confirmIn = h('input', { type: 'password', dir: 'ltr', required: true, minlength: '6', autocomplete: 'new-password', placeholder: 'أعد إدخال كلمة المرور الجديدة' });
+      var saveBtn = btn('تحديث كلمة مرور الإدارة', { kind: 'primary', ic: 'check' });
 
-      var shown = teachers.filter(function (t) {
-        var matchQuery = !f || t.name.toLowerCase().indexOf(f) >= 0 || t.username.toLowerCase().indexOf(f) >= 0;
-        var matchRole = !rFilter || (t.role || 'teacher') === rFilter;
-        var matchStatus = !sFilter || (sFilter === 'active' ? !t.must_change : !!t.must_change);
-        return matchQuery && matchRole && matchStatus;
-      });
-
-      mount(list,
-        h('div', { class: 'row between' },
-          h('p', { class: 'muted small', text: 'عدد الحسابات المعروضة: ' + shown.length + ' من أصل ' + teachers.length }),
-          h('span', { class: 'small muted', text: 'تحديث فوري' })),
-        shown.length ? shown.map(accountRow) : empty('لا توجد حسابات مطابقة لمعايير البحث'));
-    }
-
-    function openRoleChangeModal(t) {
-      var currentRole = t.role || 'teacher';
-      var sel = h('select', { 'aria-label': 'الدور الجديد' },
-        h('option', { value: 'teacher', text: 'معلم (Teacher) — رصد الحضور والغياب والاطلاع على التقارير' }),
-        h('option', { value: 'viewer', text: 'مشاهد (Viewer) — اطلاع فقط على الغياب اليومي ونشاط المعلمين' }),
-        h('option', { value: 'admin', text: 'إداري (Admin) — إدارة الحسابات والصفوف والإعدادات' }));
-      sel.value = currentRole;
-
-      var box;
-      var saveBtn = btn('حفظ الدور الجديد', { kind: 'primary', ic: 'check' });
       saveBtn.onclick = function () {
-        var newRole = sel.value;
-        if (newRole === currentRole) {
-          if (box) box.close();
-          return;
-        }
-        busy(saveBtn, function () {
-          return api('PUT', '/api/admin/teachers/' + t.uid + '/role', { role: newRole }).then(function () {
-            var roleNames = { teacher: 'معلم', viewer: 'مشاهد (اطلاع فقط)', admin: 'إدارة' };
-            toast('تم تحديث دور ' + t.name + ' إلى ' + (roleNames[newRole] || newRole) + ' بنجاح ومزامنته في Firebase');
-            if (box) box.close();
-            loadList();
-          });
-        }).catch(fail);
+        var c = curIn.value.trim(); var n = newIn.value.trim(); var cf = confirmIn.value.trim();
+        if (!c) return toast('اكتب كلمة المرور الحالية', true);
+        if (n.length < 6) return toast('كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف', true);
+        if (n !== cf) return toast('كلمتا المرور الجديدتان غير متطابقتين', true);
+        busy(saveBtn, function () { return put('/api/admin/passwords/admin', { current: c, next: n }); })
+          .then(function () {
+            toast('تم تحديث كلمة مرور الإدارة بنجاح');
+            curIn.value = ''; newIn.value = ''; confirmIn.value = '';
+          }).catch(fail);
       };
 
-      box = overlay([
-        h('div', { class: 'dlg-head' }, icon('shieldCheck'), h('h3', { text: 'تعديل صلاحية ودور الحساب' })),
-        h('p', null, 'المستخدم: ', h('b', { text: t.name }), ' (', ltr(t.username), ')'),
-        field('اختر الدور الجديد', sel, 'سيتم تحديث الدور في قاعدة البيانات وGoogle Firebase فورياً.'),
-        h('div', { class: 'acts' },
-          btn('إلغاء', { on: function () { if (box) box.close(); } }),
-          saveBtn)
-      ]);
-    }
-
-    function accountRow(t) {
-      var isAdmin = t.role === 'admin';
-      var isViewer = t.role === 'viewer';
-      var initials = t.name.slice(0, 1) || 'U';
-
-      var roleBadge = isAdmin ? h('span', { class: 'badge gold', text: 'إدارة' })
-        : (isViewer ? h('span', { class: 'badge', text: 'مشاهد (اطلاع فقط)' })
-          : h('span', { class: 'badge accent', text: 'معلم' }));
-
-      var copyUnameBtn = btn('نسخ', { sm: true, ic: 'copy', title: 'نسخ اسم المستخدم', tooltip: 'نسخ اسم المستخدم', on: function () {
-        copyText(t.username, 'تم نسخ اسم المستخدم: ' + t.username);
-      } });
-
-      var promoteBtn = isViewer ? btn('ترقية إلى معلم', {
-        sm: true,
-        kind: 'primary',
-        ic: 'userPlus',
-        title: 'ترقية الحساب إلى معلم لمنحه صلاحية رصد الحضور',
-        tooltip: 'ترقية إلى معلم (تمكينه من رصد الحصص)',
-        on: function () {
-          confirmBox('ترقية الحساب إلى معلم؟', 'سيتم تحويل دور ' + t.name + ' من (مشاهد) إلى (معلم) ومزامنته في Firebase ليتمكن من رصد حضور وغياب الطلاب.', 'ترقية إلى معلم').then(function (ok) {
-            if (!ok) return;
-            api('PUT', '/api/admin/teachers/' + t.uid + '/role', { role: 'teacher' }).then(function () {
-              toast('تمت ترقية ' + t.name + ' إلى معلم بنجاح وتحديث Firebase');
-              loadList();
-            }).catch(fail);
-          });
-        }
-      }) : null;
-
-      var changeRoleBtn = btn('تغيير الدور', {
-        sm: true,
-        ic: 'shieldCheck',
-        title: 'تغيير دور وصلاحية المستخدم ومزامنتها في Firebase',
-        tooltip: 'تغيير الدور (معلم / مشاهد / إدارة)',
-        on: function () {
-          openRoleChangeModal(t);
-        }
-      });
-
-      var resetBtn = btn('كلمة مرور جديدة', { sm: true, ic: 'key', title: 'توليد كلمة مرور جديدة وحفظها في Firebase', tooltip: 'توليد كلمة مرور جديدة وحفظها في Firebase', on: function () {
-        confirmBox('إعادة تعيين كلمة المرور؟', 'سيتم توليد كلمة مرور جديدة وحفظها في Google Firebase وتسجيل خروج ' + t.name + ' من الأجهزة.', 'إعادة تعيين').then(function (ok) {
-          if (!ok) return;
-          post('/api/admin/teachers/' + t.uid + '/reset').then(function (r) {
-            infoBox('كلمة المرور الجديدة (تم التحديث في Firebase)', h('div', { class: 'stack' },
-              h('p', null, r.name, ' — ', ltr(r.username)),
-              h('p', { class: 'cred' }, ltr(r.password)),
-              h('div', { class: 'row' }, btn('نسخ كلمة المرور', { sm: true, ic: 'copy', tooltip: 'نسخ كلمة المرور إلى الحافظة', on: function () {
-                copyText(r.password, 'تم نسخ كلمة المرور');
-              } })),
-              h('p', { class: 'muted small', text: 'احفظها الآن، فلن تظهر مرة أخرى.' })));
-            loadList();
-          }).catch(fail);
-        });
-      } });
-
-      var delBtn = btn('حذف', { sm: true, kind: 'danger', ic: 'trash', title: 'حذف الحساب نهائياً', tooltip: 'حذف الحساب نهائياً من Firebase وقاعدة البيانات', on: function () {
-        confirmBox('حذف الحساب نهائياً؟', 'سيُحذف حساب ' + t.name + ' من قاعدة البيانات ومن Google Firebase.', 'حذف نهائي', true).then(function (ok) {
-          if (ok) api('DELETE', '/api/admin/teachers/' + t.uid).then(function () {
-            toast('تم حذف الحساب بنجاح من قاعدة البيانات وFirebase');
-            loadList();
-          }).catch(fail);
-        });
-      } });
-
-      return h('div', { class: 'acc-card' },
-        h('div', { class: 'avatar', text: initials }),
-        h('div', { class: 'acc-info' },
-          h('div', { class: 'row' },
-            h('span', { class: 'name', text: t.name }),
-            roleBadge,
-            t.must_change ? h('span', { class: 'badge warn', text: 'بانتظار تغيير كلمة المرور' }) : h('span', { class: 'badge ok', text: 'نشط' })),
-          h('div', { class: 'uname' },
-            h('span', { text: 'اسم المستخدم: ' }),
-            ltr(t.username),
-            copyUnameBtn,
-            t.email && h('span', { class: 'small muted' }, ' • بريد: ', ltr(t.email)))),
-        h('div', { class: 'acc-acts' },
-          promoteBtn,
-          changeRoleBtn,
-          resetBtn,
-          delBtn));
-    }
-
-    q.addEventListener('input', paintList);
-    roleFilter.addEventListener('change', paintList);
-    statusFilter.addEventListener('change', paintList);
-
-    paintFbBanner();
-    paintCreator();
-
-    host.append(
-      fbBanner,
-      statsBox,
-      h('div', { class: 'card' },
-        h('h2', null, h('span', { text: 'إنشاء وإضافة حسابات جديدة' }), icon('userPlus')),
-        creatorBox),
-      resultsBox,
-      h('div', { class: 'card' },
-        h('h2', null, h('span', { text: 'دليل وإدارة الحسابات المسجلة' }), icon('users')),
+      mount(adminPwCard,
+        h('h2', { text: 'تغيير كلمة مرور لوحة الإدارة' }),
         h('div', { class: 'stack' },
-          h('div', { class: 'grid' }, q, roleFilter, statusFilter),
-          list)));
+          field('كلمة المرور الحالية', curIn),
+          h('div', { class: 'grid' },
+            field('كلمة المرور الجديدة', newIn),
+            field('تأكيد كلمة المرور الجديدة', confirmIn)),
+          h('div', { class: 'row end' }, saveBtn)));
+    }
 
-    loadList();
+    // 3) بطاقة دليل وقائمة المعلمين
+    function paintTeachersRoster() {
+      var searchIn = h('input', { type: 'search', placeholder: 'ابحث بالاسم في دليل المعلمين…', 'aria-label': 'بحث في دليل المعلمين' });
+      var countSpan = h('span', { class: 'badge', text: 'عدد المعلمين: 0' });
+      var tableHost = h('div', { class: 't-wrap' });
+
+      var singleNameIn = h('input', { type: 'text', placeholder: 'مثال: الأستاذ محمد بن سعيد السعدي' });
+      var addSingleBtn = btn('إضافة معلم', { sm: true, kind: 'primary', ic: 'plus' });
+
+      addSingleBtn.onclick = function () {
+        var n = singleNameIn.value.trim();
+        if (!n) return toast('اكتب اسم المعلم أولاً', true);
+        busy(addSingleBtn, function () { return post('/api/admin/teachers', { name: n }); })
+          .then(function () {
+            toast('تمت إضافة المعلم «' + n + '» بنجاح');
+            singleNameIn.value = '';
+            loadRoster();
+          }).catch(fail);
+      };
+
+      var bulkText = h('textarea', { placeholder: 'لصق قائمة أسماء المعلمين (اسم في كل سطر)', rows: '4' });
+      var addBulkBtn = btn('إضافة القائمة', { sm: true, kind: 'primary', ic: 'plus' });
+
+      addBulkBtn.onclick = function () {
+        var lines = bulkText.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+        if (!lines.length) return toast('اكتب أسماء المعلمين', true);
+        busy(addBulkBtn, function () { return post('/api/admin/teachers', { names: lines }); })
+          .then(function (res) {
+            toast('تمت إضافة ' + (res.created ? res.created.length : lines.length) + ' معلماً بنجاح');
+            bulkText.value = '';
+            loadRoster();
+          }).catch(fail);
+      };
+
+      function renderTable() {
+        var q = searchIn.value.trim().toLowerCase();
+        var hits = teachersRoster.filter(function (t) {
+          return !q || t.name.toLowerCase().indexOf(q) >= 0;
+        });
+        countSpan.textContent = 'عدد المعلمين: ' + teachersRoster.length;
+
+        mount(tableHost, hits.length ? h('table', null,
+          h('thead', null, h('tr', null, h('th', { text: '#' }), h('th', { text: 'اسم المعلم' }), h('th', { text: 'تاريخ الإضافة' }), h('th', { text: 'حذف' }))),
+          h('tbody', null, hits.map(function (t, i) {
+            var dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString('ar-OM') : '—';
+            return h('tr', null,
+              h('td', null, i + 1),
+              h('td', null, h('b', { text: t.name })),
+              h('td', { class: 'small muted' }, dateStr),
+              h('td', null, btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
+                confirmBox('حذف المعلم من الدليل؟', 'سيُحذف المعلم «' + t.name + '» من قائمة الاختيار في المنصة.', 'حذف', true).then(function (ok) {
+                  if (ok) api('DELETE', '/api/admin/teachers/' + t.id).then(function () {
+                    toast('تم حذف المعلم');
+                    loadRoster();
+                  }).catch(fail);
+                });
+              } })));
+          }))) : empty('لا يوجد معلمون مطابقون للبحث'));
+      }
+
+      function loadRoster() {
+        get('/api/admin/teachers').then(function (res) {
+          teachersRoster = res.teachers || [];
+          S.teachersList = teachersRoster;
+          renderTable();
+        }).catch(fail);
+      }
+
+      searchIn.addEventListener('input', renderTable);
+
+      mount(rosterCard,
+        h('div', { class: 'row between' },
+          h('h2', { text: 'دليل وقائمة المعلمين في المدرسة' }),
+          countSpan),
+        h('p', { class: 'muted small', text: 'تظهر هذه الأسماء للمعلمين عند اختيار هويتهم في بوابة المعلمين.' }),
+        h('div', { class: 'grid', style: 'margin: 14px 0;' },
+          field('إضافة معلم واحد', h('div', { class: 'row' }, h('div', { class: 'grow' }, singleNameIn), addSingleBtn)),
+          field('إضافة دفعة معلمين (اسم في كل سطر)', h('div', { class: 'stack' }, bulkText, h('div', { class: 'row end' }, addBulkBtn)))),
+        h('div', { style: 'margin: 12px 0;' }, searchIn),
+        tableHost);
+
+      loadRoster();
+    }
+
+    paintTeacherPwControl();
+    paintAdminPwChange();
+    paintTeachersRoster();
+
+    host.append(pwCard, adminPwCard, rosterCard);
   }
 
   function viewRecords(host) {
@@ -1607,15 +1150,6 @@
       busy(saveRules, function () { return api('PUT', '/api/admin/rules', { rules: rules }); })
         .then(function () { return loadMe(); }).then(function () { toast('تم حفظ اللائحة'); }).catch(fail);
     };
-    var fbSyncStatus = h('div', { class: 'small' });
-    var fbSyncBtn = btn('مزامنة شاملة الآن مع Firestore', { sm: true, ic: 'refresh', title: 'مزامنة مع Google Firebase', tooltip: 'مزامنة شاملة للحسابات والصفوف مع Cloud Firestore', on: function () {
-      busy(fbSyncBtn, function () { return post('/api/admin/firebase/sync'); })
-        .then(function (r) {
-          toast(r.message || 'تمت مزامنة البيانات مع Firebase');
-          mount(fbSyncStatus, h('span', { class: 'badge ok' }, icon('checkCircle'),
-            'تمت المزامنة: ' + (r.synced ? r.synced.users : '') + ' حساب، ' + (r.synced ? r.synced.groups : '') + ' صف، والإعدادات.'));
-        }).catch(fail);
-    } });
 
     var auditBox = h('div');
     var auditBtn = btn('عرض آخر العمليات', { sm: true, on: function () {
@@ -1627,14 +1161,6 @@
     } });
     host.append(
       h('div', { class: 'card' }, h('h2', { text: 'بيانات المدرسة' }), h('div', { class: 'stack' }, field('اسم المدرسة', school), field('مدير المدرسة', principal), field('حقوق التطوير والبرمجة', dev), h('div', { class: 'row end' }, saveInfo))),
-      h('div', { class: 'card' },
-        h('h2', null, h('span', { text: 'قاعدة بيانات Google Firebase' }), icon('database')),
-        h('div', { class: 'fb-banner' },
-          h('div', { class: 'fb-icon' }, icon('database')),
-          h('div', { class: 'fb-text' },
-            h('b', { text: 'Google Firebase (Authentication & Cloud Firestore)' }),
-            h('span', { text: 'يتم تخزين الحسابات والبيانات في Firebase. يمكنك إجراء مزامنة فورية شاملة للمستخدمين والصفوف والإعدادات بنقرة واحدة.' }))),
-        h('div', { class: 'row' }, fbSyncBtn, fbSyncStatus)),
       h('div', { class: 'card' }, h('h2', { text: 'لائحة الإجراءات حسب أيام الغياب' }), h('p', { class: 'muted small', text: 'يُطبَّق أعلى إجراء بلغه الطالب خلال الشهر. أقل رقم هنا هو حد ظهور الطالب في التقرير الشهري.' }), rulesBox,
         h('div', { class: 'row' }, btn('إضافة قاعدة', { sm: true, ic: 'plus', on: function () { rules.push({ min_days: 1, label: '', color: '#06b6d4' }); paintRules(); } }), saveRules)),
       h('div', { class: 'card' }, h('h2', { text: 'سجل العمليات' }), h('div', { class: 'stack' }, auditBtn, auditBox)));
@@ -1642,7 +1168,7 @@
 
   /* ---------------------------------------------------------------- 9) التشغيل */
   window.addEventListener('hashchange', render);
-  try { var saved = localStorage.getItem('theme'); if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved); } catch (e) { /* ok */ }
+  try { var saved = localStorage.getItem('theme'); if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved); } catch (e) {}
   var DEFAULT_PUB = { school_name: 'مدرسة الشيخ سالم الصائغي', principal_name: 'الأستاذ يونس الحجري', developer_credit: 'الأستاذ منير الصالحي' };
   Promise.all([get('/api/public').catch(function () { return null; }), loadMe().catch(function () { return null; })]).then(function (r) {
     S.offline = !r[0]; S.pub = r[0] || DEFAULT_PUB; render();

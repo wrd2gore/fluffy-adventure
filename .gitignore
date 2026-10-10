@@ -12,8 +12,8 @@ node_modules/
 .env.*.local
 *.pem
 *.key
+*.csv
 
-# OS & Logs
 Thumbs.db
 .DS_Store
 *.log
