@@ -488,6 +488,49 @@ test('التقرير اليومي والأسبوعي والشهري', async () =
   assert.equal(monthly.data.totals.absence_days, 1);
 });
 
+test('تعديل غياب وحضور الطالب بواسطة الإدارة', async () => {
+  const w = world();
+  const a = await w.admin();
+  const t = await w.teacher();
+
+  const g = await w.group(a, '10-2', 'basic', w.students(2));
+  const sList = await w.idsOf(g.group.id, t);
+
+  // 1. المعلم يسجل الطالب غائباً
+  await w.call('POST', '/api/record', {
+    cookie: t,
+    body: {
+      date: DAY.tue,
+      period: 1,
+      group_id: g.group.id,
+      teacher_name: 'معلم الصف',
+      entries: [{ student_id: sList[0].id, status: 'absent', note: 'غائب' }],
+    },
+  });
+
+  // 2. التحقق من التقرير اليومي أنه غائب
+  let daily = await w.call('GET', `/api/reports/daily?date=${DAY.tue}&group_id=${g.group.id}`, { cookie: a });
+  assert.equal(daily.data.students[0].periods[1]?.status, 'absent');
+
+  // 3. الإدارة تعدل حالة الطالب إلى حاضر بعذر
+  const updRes = await w.call('POST', '/api/admin/entries/update', {
+    cookie: a,
+    body: {
+      date: DAY.tue,
+      group_id: g.group.id,
+      student_id: sList[0].id,
+      period: 1,
+      status: 'present',
+      note: 'عذر مقبول من الإدارة',
+    },
+  });
+  assert.equal(updRes.status, 200);
+
+  // 4. التحقق من التقرير اليومي أن الحالة أصبحت حاضر
+  daily = await w.call('GET', `/api/reports/daily?date=${DAY.tue}&group_id=${g.group.id}`, { cookie: a });
+  assert.equal(daily.data.students[0].periods[1]?.status, 'present');
+});
+
 // ===================================================================== 7) الفحص الثابت وحقن SQL
 test('فحص ثابت: لا يُبنى أي استعلام SQL بدمج النصوص', () => {
   const templates = WORKER_SRC.match(/`[^`]*`/gs) ?? [];

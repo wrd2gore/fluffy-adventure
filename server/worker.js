@@ -955,6 +955,66 @@ async function clearEntries({ db, body, user }) {
   return json(200, { ok: true, cleared: res.meta.changes });
 }
 
+async function updateAdminEntry({ db, body, user, nowMs }) {
+  const date = isoDate(body.date);
+  const gid = idOf(body.group_id, 'الصف');
+  const sid = idOf(body.student_id, 'الطالب');
+  const status = oneOf(body.status, 'الحالة', ['present', 'absent', 'late']);
+  const note = optStr(body.note, 'الملاحظة', 200) || '';
+  const period = (body.period && body.period !== 'all' && Number(body.period) > 0)
+    ? int(body.period, 'الحصة', 1, CONFIG.PERIODS)
+    : null;
+
+  const s = await one(db, 'SELECT id, number, name FROM students WHERE id = ?1', sid);
+  if (!s) throw notFound('الطالب غير موجود');
+
+  const enr = await one(db, 'SELECT 1 FROM enrollments WHERE group_id = ?1 AND student_id = ?2', gid, sid);
+  if (!enr) throw bad('الطالب غير مسجل في هذا الصف');
+
+  let recordsQuery = 'SELECT id, period, teacher_name FROM records WHERE date = ?1 AND group_id = ?2';
+  const queryParams = [date, gid];
+  if (period !== null) {
+    recordsQuery += ' AND period = ?3';
+    queryParams.push(period);
+  }
+  const records = await all(db, recordsQuery, ...queryParams);
+
+  const batch = [];
+  if (records.length === 0) {
+    const p = period !== null ? period : 1;
+    const createRes = await run(db,
+      'INSERT INTO records (date, period, group_id, teacher_uid, teacher_name, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
+      date, p, gid, 'admin', user.name || 'إدارة المدرسة', nowMs
+    );
+    const recId = createRes.meta?.last_row_id;
+    if (recId) {
+      batch.push(st(db,
+        'INSERT OR REPLACE INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
+        recId, sid, status, note
+      ));
+    }
+  } else {
+    for (const r of records) {
+      batch.push(st(db,
+        'INSERT OR REPLACE INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
+        r.id, sid, status, note
+      ));
+    }
+  }
+
+  batch.push(auditStmt(db, user.name || 'إدارة المدرسة', 'entry.admin_edit', {
+    student_id: sid,
+    student_name: s.name,
+    date,
+    period: period ?? 'all',
+    status,
+    note
+  }));
+
+  await db.batch(batch);
+  return json(200, { ok: true, student_name: s.name, status });
+}
+
 async function listRecords({ db, query }) {
   const date = isoDate(query.date);
   const records = await all(db,
@@ -1005,6 +1065,7 @@ export const ROUTES = [
   ['DELETE', '/api/admin/teachers/:id', 'admin', deleteTeacher],
   ['GET', '/api/admin/reports/monthly', 'admin', monthlyReport],
   ['POST', '/api/admin/entries/clear', 'admin', clearEntries],
+  ['POST', '/api/admin/entries/update', 'admin', updateAdminEntry],
   ['GET', '/api/admin/records', 'admin', listRecords],
   ['DELETE', '/api/admin/records/:id', 'admin', deleteRecord],
   ['GET', '/api/admin/audit', 'admin', auditList],

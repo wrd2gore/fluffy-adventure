@@ -798,15 +798,35 @@
   function lastSchoolDay(d) { while (isWeekend(d)) d = addDays(d, -1); return d; }
   function printButton() { return btn('طباعة', { ic: 'print', sm: true, on: function () { window.print(); } }); }
 
+  function getActiveDate() {
+    var d = '';
+    try { d = localStorage.getItem('last_selected_date') || ''; } catch (e) {}
+    return d || lastSchoolDay(S.config.today);
+  }
+  function setActiveDate(d) {
+    try { localStorage.setItem('last_selected_date', d); } catch (e) {}
+  }
+  function getActiveGroupId() {
+    var g = '';
+    try { g = localStorage.getItem('last_selected_gid') || ''; } catch (e) {}
+    return g;
+  }
+  function setActiveGroupId(g) {
+    try { localStorage.setItem('last_selected_gid', String(g || '')); } catch (e) {}
+  }
+
   /* ---------------------------------------------------------------- 6) رصد الغياب (المعلم) */
   function viewAttendance(host) {
-    var savedGid = '';
-    try { savedGid = localStorage.getItem('last_selected_gid') || ''; } catch (e) {}
-    var st = { date: lastSchoolDay(S.config.today), period: 1, gid: savedGid, students: [], marks: {}, notes: {}, record: null, loaded: false };
+    var savedGid = getActiveGroupId();
+    var st = { date: getActiveDate(), period: 1, gid: savedGid, students: [], marks: {}, notes: {}, record: null, loaded: false };
     var minDate = addDays(S.config.today, -S.config.max_backdate_days);
     var out = h('div');
     var dayLabel = h('span', { class: 'muted small' });
-    var dateIn = h('input', { type: 'date', value: st.date, min: minDate, max: S.config.today, onchange: function () { st.date = dateIn.value || st.date; load(); } });
+    var dateIn = h('input', { type: 'date', value: st.date, min: minDate, max: S.config.today, onchange: function () {
+      st.date = dateIn.value || st.date;
+      setActiveDate(st.date);
+      load();
+    } });
     var per = periodSelect(1, function (p) { st.period = p; load(); });
     var grpHolder = h('div');
 
@@ -830,7 +850,7 @@
       }
       mount(grpHolder, groupSelect(['basic', 'mobile'], st.gid, function (v) {
         st.gid = v;
-        try { localStorage.setItem('last_selected_gid', v); } catch (e) {}
+        setActiveGroupId(v);
         load();
       }));
       header();
@@ -952,6 +972,8 @@
             });
           }).then(function () {
             toast(isRecorded ? 'تم تحديث الرصد بنجاح' : 'تم حفظ الرصد بنجاح');
+            setActiveDate(st.date);
+            setActiveGroupId(st.gid);
             st.record = {
               id: (st.record && st.record.id) || 1,
               teacher_name: S.selectedTeacher,
@@ -999,24 +1021,150 @@
     }, 15000);
   }
 
+  // نافذة تعديل غياب/حضور طالب للإدارة
+  function openAdminEditAbsenceModal(opts) {
+    var date = opts.date;
+    var groupId = opts.groupId;
+    var groupName = opts.groupName || '';
+    var students = opts.students || [];
+    var periodsCount = opts.periodsCount || 8;
+    var teachersByPeriod = opts.teachersByPeriod || {};
+    var preselectedSid = opts.selectedStudentId || (students.length ? students[0].id : '');
+    var onDone = opts.onDone;
+
+    var studentSel = h('select', { 'aria-label': 'اختر الطالب المراد تعديل حالته' });
+    students.forEach(function (s, i) {
+      var opt = h('option', { value: String(s.id), text: (i + 1) + ' — ' + s.name + ' (' + s.number + ')' });
+      if (String(s.id) === String(preselectedSid)) opt.selected = true;
+      studentSel.append(opt);
+    });
+
+    var periodSel = h('select', { 'aria-label': 'اختر الحصة المراد تعديلها' });
+    periodSel.append(h('option', { value: 'all', text: 'كل الحصص المرصودة لهذا اليوم' }));
+    for (var p = 1; p <= periodsCount; p++) {
+      var tchr = teachersByPeriod[p];
+      periodSel.append(h('option', { value: String(p), text: 'الحصة ' + p + (tchr ? ' (رصد: ' + tchr + ')' : ' (لم ترصد بعد)') }));
+    }
+
+    var statusSel = h('select', { 'aria-label': 'الحالة الجديدة' },
+      h('option', { value: 'present', text: '✓ حاضر' }),
+      h('option', { value: 'absent', text: '✗ غائب' }),
+      h('option', { value: 'late', text: '⏱ متأخر' })
+    );
+
+    if (preselectedSid) {
+      var curSt = students.find(function (s) { return String(s.id) === String(preselectedSid); });
+      if (curSt) {
+        var firstPeriodStatus = (curSt.periods && curSt.periods[1]) ? curSt.periods[1].status : '';
+        if (firstPeriodStatus === 'absent') statusSel.value = 'present';
+        else if (firstPeriodStatus === 'present') statusSel.value = 'absent';
+      }
+    }
+
+    var noteIn = h('input', {
+      type: 'text',
+      placeholder: 'الملاحظة أو العذر (مثال: عذر طبي معتمد، خطأ رصد، إذن مسبق)…',
+      maxlength: '200'
+    });
+
+    var box;
+    var saveBtn = btn('حفظ التعديل', {
+      kind: 'primary',
+      ic: 'check',
+      on: function () {
+        var sid = studentSel.value;
+        if (!sid) return toast('يرجى اختيار الطالب', true);
+        var targetStudent = students.find(function (s) { return String(s.id) === String(sid); });
+        var studentName = targetStudent ? targetStudent.name : 'الطالب';
+
+        busy(saveBtn, function () {
+          return post('/api/admin/entries/update', {
+            date: date,
+            group_id: Number(groupId),
+            student_id: Number(sid),
+            status: statusSel.value,
+            period: periodSel.value,
+            note: noteIn.value.trim()
+          });
+        }).then(function () {
+          toast('تم تعديل حالة الطالب «' + studentName + '» بنجاح');
+          box.close();
+          if (onDone) onDone();
+        }).catch(fail);
+      }
+    });
+
+    box = overlay([
+      h('div', { class: 'pw-modal-header' },
+        icon('edit'),
+        h('h3', { text: 'تعديل حالة غياب / حضور طالب' })),
+      h('p', { class: 'muted small', text: 'الصف: ' + groupName + ' | التاريخ: ' + date }),
+      h('div', { class: 'stack' },
+        field('اختر الطالب المراد تعديل حالته', studentSel, 'حدد الطالب من القائمة لتغيير حالته في الكشف'),
+        h('div', { class: 'grid' },
+          field('الحصة المستهدفة', periodSel),
+          field('الحالة الجديدة', statusSel)),
+        field('الملاحظة / العذر', noteIn, 'اختياري: توثيق سبب التعديل أو العذر في السجل')),
+      h('div', { class: 'acts' },
+        btn('إلغاء', { on: function () { box.close(); } }),
+        saveBtn)
+    ]);
+  }
+
   /* ---------------------------------------------------------------- 7) التقارير */
   function viewDaily(host) {
-    var date = lastSchoolDay(S.config.today);
-    var gid = '';
+    var date = getActiveDate();
+    var gid = getActiveGroupId();
     var out = h('div');
-    var dateIn = h('input', { type: 'date', value: date, onchange: function () { date = dateIn.value || date; load(); } });
+    var currentReportData = null;
+
+    var dateIn = h('input', { type: 'date', value: date, onchange: function () {
+      date = dateIn.value || date;
+      setActiveDate(date);
+      load();
+    } });
     var grpHolder = h('div');
 
+    var refreshBtn = btn('تحديث', { sm: true, ic: 'refresh', title: 'تحديث بيانات الكشف', on: function () { load(); } });
+    var editBtn = (S.user && S.user.role === 'admin') ? btn('تعديل الغياب', {
+      kind: 'primary',
+      sm: true,
+      ic: 'edit',
+      title: 'تعديل حالة غياب أو حضور طالب في هذا الكشف',
+      on: function () {
+        if (!currentReportData || !currentReportData.students.length) return toast('اختر الصف أولاً للتعديل', true);
+        openAdminEditAbsenceModal({
+          date: date,
+          groupId: gid,
+          groupName: currentReportData.group.name,
+          students: currentReportData.students,
+          periodsCount: currentReportData.periods_count,
+          teachersByPeriod: currentReportData.teachers_by_period,
+          onDone: function () { load(); }
+        });
+      }
+    }) : null;
+
     host.append(
-      h('div', { class: 'page-head' }, h('h2', { text: 'التقرير اليومي' }), printButton()),
+      h('div', { class: 'page-head' },
+        h('h2', { text: 'التقرير اليومي' }),
+        h('div', { class: 'row' }, editBtn, refreshBtn, printButton())),
       h('div', { class: 'card noprint' },
         h('div', { class: 'grid' }, field('التاريخ', dateIn), field('الصف الأساسي', grpHolder))),
       out);
 
     loadGroups().then(function (groups) {
       var basic = groups.filter(function (g) { return g.kind === 'basic'; });
-      if (basic.length && !gid) gid = String(basic[0].id);
-      mount(grpHolder, groupSelect(['basic'], gid, function (v) { gid = v; load(); }));
+      var isBasic = basic.some(function (b) { return String(b.id) === String(gid); });
+      if (!isBasic && basic.length) {
+        gid = String(basic[0].id);
+        setActiveGroupId(gid);
+      }
+      mount(grpHolder, groupSelect(['basic'], gid, function (v) {
+        gid = v;
+        setActiveGroupId(v);
+        load();
+      }));
       load();
     }).catch(fail);
 
@@ -1024,6 +1172,8 @@
       if (!gid) { mount(out, empty('اختر الصف لعرض التقرير')); return; }
       mount(out, skeleton(4));
       get('/api/reports/daily?' + qs({ date: date, group_id: gid })).then(function (r) {
+        currentReportData = r;
+        var isAdmin = S.user && S.user.role === 'admin';
         var t = h('table');
         var headRow = h('tr', null, h('th', { text: 'م' }), h('th', { text: 'الرقم' }), h('th', { text: 'اسم الطالب' }));
         for (var p = 1; p <= r.periods_count; p++) {
@@ -1033,11 +1183,12 @@
               tchr
                 ? h('span', { class: 'period-th-teacher', text: tchr, title: tchr })
                 : h('span', { class: 'period-th-empty' }),
-              h('span', { class: 'period-th-num', text: 'ح' + p })
+              h('span', { class: 'period-th-num', dir: 'ltr', text: 'ح' + p })
             )
           ));
         }
         headRow.append(h('th', { text: 'المواد المتنقلة' }));
+        if (isAdmin) headRow.append(h('th', { class: 'noprint', text: 'تعديل' }));
         t.append(h('thead', null, headRow));
         var tbody = h('tbody');
         r.students.forEach(function (s, idx) {
@@ -1050,6 +1201,26 @@
           }
           var mob = s.mobile.map(function (m) { return m.group_name + ' (ح' + m.period + '): ' + STATUS[m.status][0]; }).join(' • ');
           row.append(h('td', { class: 'small' }, mob || '—'));
+          if (isAdmin) {
+            row.append(h('td', { class: 'center noprint' },
+              btn('تعديل', {
+                sm: true,
+                ic: 'edit',
+                title: 'تعديل حالة غياب / حضور ' + s.name,
+                on: function () {
+                  openAdminEditAbsenceModal({
+                    date: date,
+                    groupId: gid,
+                    groupName: r.group.name,
+                    students: r.students,
+                    periodsCount: r.periods_count,
+                    teachersByPeriod: r.teachers_by_period,
+                    selectedStudentId: s.id,
+                    onDone: function () { load(); }
+                  });
+                }
+              })));
+          }
           tbody.append(row);
         });
         t.append(tbody);
