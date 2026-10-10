@@ -130,7 +130,7 @@ function hexToBuf(hexStr) {
   return bytes;
 }
 
-export const PW_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
+const PW_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
 export function newPassword(len = 10) {
   let out = '';
   const limit = 256 - (256 % PW_ALPHABET.length);
@@ -248,6 +248,24 @@ export async function ensureSchema(db, env = {}) {
 
   try {
     await run(db, 'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+  } catch {}
+
+  try {
+    const sInfo = await all(db, 'PRAGMA table_info(auth_sessions)');
+    const hasCreatedAt = sInfo.some((c) => c.name === 'created_at');
+    const hasEmail = sInfo.some((c) => c.name === 'email');
+    if (sInfo.length > 0 && (!hasCreatedAt || hasEmail)) {
+      await run(db, `CREATE TABLE IF NOT EXISTS auth_sessions_v3 (
+        id TEXT PRIMARY KEY,
+        uid TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('teacher', 'admin')),
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )`);
+      await run(db, 'DROP TABLE auth_sessions');
+      await run(db, 'ALTER TABLE auth_sessions_v3 RENAME TO auth_sessions');
+      await run(db, 'CREATE INDEX IF NOT EXISTS auth_sessions_uid ON auth_sessions (uid)');
+    }
   } catch {}
 
   try {
