@@ -305,45 +305,59 @@
   function openTeacherSelectorModal(onDone) {
     loadTeachersRoster().then(function (teachers) {
       var box;
-      var searchIn = h('input', { type: 'search', placeholder: 'ابحث عن اسمك في القائمة…', 'aria-label': 'بحث عن معلم' });
-      var listHost = h('div', { class: 'teacher-grid' });
+      var nameIn = h('input', {
+        type: 'text',
+        placeholder: 'اكتب اسمك هنا (مثال: أ. محمد السعدي)…',
+        value: S.selectedTeacher || '',
+        maxlength: '100',
+        style: 'width: 100%; font-size: 1.05rem; padding: 10px 14px; margin-bottom: 8px;'
+      });
+      var submitBtn = btn('حفظ الاسم والمتابعة', {
+        kind: 'primary',
+        ic: 'check',
+        on: function () {
+          var val = nameIn.value.trim();
+          if (!val) return toast('يرجى كتابة اسم المعلم أولاً للمتابعة', true);
+          S.selectedTeacher = val;
+          try { localStorage.setItem('selected_teacher_name', val); } catch (e) {}
+          toast('أهلاً بك: ' + val);
+          box.close();
+          if (onDone) onDone(val);
+          render();
+        }
+      });
+      nameIn.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitBtn.click(); }
+      });
 
-      function renderGrid() {
-        var query = searchIn.value.trim().toLowerCase();
-        var hits = teachers.filter(function (t) {
-          return !query || t.name.toLowerCase().indexOf(query) >= 0;
-        });
-
-        mount(listHost, hits.length ? hits.map(function (t) {
+      var rosterSection = null;
+      if (teachers && teachers.length) {
+        var chips = teachers.map(function (t) {
           var isCur = S.selectedTeacher === t.name;
           return h('button', {
             type: 'button',
             class: 'teacher-grid-btn' + (isCur ? ' selected' : ''),
             onclick: function () {
-              S.selectedTeacher = t.name;
-              try { localStorage.setItem('selected_teacher_name', t.name); } catch (e) {}
-              toast('أهلاً بك: ' + t.name);
-              box.close();
-              if (onDone) onDone(t.name);
-              render();
+              nameIn.value = t.name;
+              submitBtn.click();
             }
-          },
-            h('span', { text: t.name }),
-            isCur ? icon('check') : null);
-        }) : empty('لم يُعثر على معلّم بهذا الاسم'));
+          }, h('span', { text: t.name }), isCur ? icon('check') : null);
+        });
+        rosterSection = h('div', { style: 'margin-top: 14px;' },
+          h('p', { class: 'muted small', style: 'margin-bottom: 6px;', text: 'أو اختر اسمك المسجل في دليل المدرسة:' }),
+          h('div', { class: 'teacher-grid' }, chips));
       }
 
-      searchIn.addEventListener('input', renderGrid);
-      renderGrid();
-
       box = overlay([
-        h('h3', { text: 'من أنت؟ اختر اسمك للمتابعة' }),
-        h('p', { class: 'muted small', text: 'اختر اسمك من قائمة المعلمين لحفظ هويتك في هذا المتصفح ورصد الحصص باسمك المعتمد.' }),
-        h('div', { style: 'margin: 12px 0;' }, searchIn),
-        listHost,
+        h('h3', { text: 'من أنت؟ حدد هويتك للمتابعة' }),
+        h('p', { class: 'muted small', text: 'اكتب اسمك لحفظ هويتك في هذا المتصفح ورصد الحصص باسمك المعتمد.' }),
+        h('div', { style: 'margin: 14px 0 8px 0;' }, nameIn),
+        rosterSection,
         h('div', { class: 'acts' },
-          S.selectedTeacher && btn('إلغاء', { on: function () { box.close(); } }))
+          S.selectedTeacher && btn('إلغاء', { on: function () { box.close(); } }),
+          submitBtn)
       ]);
+      setTimeout(function () { nameIn.focus(); }, 60);
     }).catch(fail);
   }
 
@@ -1169,7 +1183,7 @@
   /* ---------------------------------------------------------------- 9) التشغيل */
   window.addEventListener('hashchange', render);
   try { var saved = localStorage.getItem('theme'); if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved); } catch (e) {}
-  var DEFAULT_PUB = { school_name: 'مدرسة الشيخ سالم الصائغي', principal_name: 'الأستاذ يونس الحجري', developer_credit: 'الأستاذ منير الصالحي' };
+  var DEFAULT_PUB = { school_name: 'مدرسة حفص بن راشد', principal_name: 'الأستاذ طلال الهنائي', developer_credit: 'الأستاذ منير الصالحي' };
   Promise.all([get('/api/public').catch(function () { return null; }), loadMe().catch(function () { return null; })]).then(function (r) {
     S.offline = !r[0]; S.pub = r[0] || DEFAULT_PUB; render();
   });

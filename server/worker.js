@@ -96,8 +96,8 @@ async function loadSettings(db) {
   const rows = await all(db, 'SELECT key, value FROM settings');
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   return {
-    school_name: s.school_name ?? 'مدرسة الشيخ سالم الصائغي',
-    principal_name: s.principal_name ?? 'الأستاذ يونس الحجري',
+    school_name: s.school_name ?? 'مدرسة حفص بن راشد',
+    principal_name: s.principal_name ?? 'الأستاذ طلال الهنائي',
     developer_credit: s.developer_credit ?? 'الأستاذ منير الصالحي',
   };
 }
@@ -195,14 +195,48 @@ function readCookie(request, name) {
   }
   return null;
 }
+function readSessionToken(request) {
+  return readCookie(request, '__Host-sid') || readCookie(request, 'sid');
+}
 const sessionCookie = (url, token, maxAge) =>
   `${cookieName(url)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${url.protocol === 'https:' ? '; Secure' : ''}`;
+
+async function hmacSign(secret, message) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return hex(sig);
+}
+
+export async function createSignedSessionToken(uid, role, expiresAt, secret) {
+  const nonce = newToken(16);
+  const payload = `${uid}.${role}.${expiresAt}.${nonce}`;
+  const sig = await hmacSign(secret, payload);
+  return `${payload}.${sig}`;
+}
+
+export async function verifySignedSessionToken(token, nowS, secret) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 5) return null;
+  const [uid, role, expiresAtStr, nonce, sigHex] = parts;
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isInteger(expiresAt) || expiresAt <= nowS) return null;
+  if (role !== 'admin' && role !== 'teacher') return null;
+  const payload = `${uid}.${role}.${expiresAt}.${nonce}`;
+  const expectedSig = await hmacSign(secret, payload);
+  if (!constantTimeEqual(sigHex, expectedSig)) return null;
+  const name = role === 'admin' ? 'الإدارة' : 'المعلم';
+  return { uid, role, name, tokenId: sigHex };
+}
 
 // دوال توافقية لأي استدعاءات خارجية وهمية
 export function fakeFirebase() { return {}; }
 export function realFirebase() { return {}; }
 
-let schemaEnsured = false;
+const ensuredDbs = new WeakSet();
 export async function ensurePasswords(db, env = {}) {
   // تهيئة كلمة مرور المعلمين إذا لم تكن موجودة
   const tHash = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_hash'");
@@ -230,7 +264,8 @@ export async function ensurePasswords(db, env = {}) {
 }
 
 export async function ensureSchema(db, env = {}) {
-  if (schemaEnsured || !db) return;
+  if (!db || ensuredDbs.has(db)) return;
+  ensuredDbs.add(db);
   try {
     const info = await all(db, 'PRAGMA table_info(teachers)');
     const hasId = info.some((c) => c.name === 'id');
@@ -278,8 +313,11 @@ export async function ensureSchema(db, env = {}) {
     )`);
   } catch {}
 
+  try {
+    await run(db, 'CREATE TABLE IF NOT EXISTS session_revocations (id TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL)');
+  } catch {}
+
   await ensurePasswords(db, env);
-  schemaEnsured = true;
 }
 
 // ------------------------------------------------------------------ 5) المصادقة والدخول والتحكم بكلمات المرور
@@ -321,7 +359,7 @@ async function login(ctx) {
   const nowS = Math.floor(nowMs / 1000);
   await throttleCheck(db, ip, gate, nowS);
   await verifyTurnstile(env, body.turnstile, ip);
-  await ensurePasswords(db, env);
+  await ensureSchema(db, env);
 
   let verified = false;
   if (gate === 'teacher') {
@@ -346,29 +384,85 @@ async function login(ctx) {
 
   const role = gate;
   const name = gate === 'admin' ? 'الإدارة' : 'المعلم';
-  const token = newToken();
+  const expiresAt = nowS + CONFIG.SESSION_HOURS * 3600;
 
-  await db.batch([
-    st(db, 'DELETE FROM login_fail WHERE k = ?1', `ip:${ip}`),
-    st(db, 'DELETE FROM login_fail WHERE at < ?1', nowS - 3600),
-    st(db, 'DELETE FROM auth_sessions WHERE expires_at < ?1', nowS),
-    st(db, 'INSERT INTO auth_sessions (id, uid, role, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)',
-      await sha256(token), gate, role, nowS, nowS + CONFIG.SESSION_HOURS * 3600),
-  ]);
+  let currentPwKey = '';
+  try {
+    currentPwKey = role === 'admin'
+      ? (env.DEV_ADMIN_PASSWORD || env.ADMIN_PASSWORD || 'Boss-Pass-123')
+      : (await getTeacherPasswordPlain(db));
+  } catch {}
+  const sessionSecret = `${env.SESSION_SECRET || 'school-hafth-session-2026'}:${currentPwKey}`;
+  const token = await createSignedSessionToken(gate, role, expiresAt, sessionSecret);
+  const tokenId = await sha256(token);
+
+  try {
+    await db.batch([
+      st(db, 'DELETE FROM login_fail WHERE k = ?1', `ip:${ip}`),
+      st(db, 'DELETE FROM login_fail WHERE at < ?1', nowS - 3600),
+      st(db, 'DELETE FROM auth_sessions WHERE expires_at < ?1', nowS),
+      st(db, 'DELETE FROM session_revocations WHERE id = ?1', tokenId),
+      st(db, 'INSERT INTO auth_sessions (id, uid, role, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)',
+        tokenId, gate, role, nowS, expiresAt),
+    ]);
+  } catch {}
 
   return json(200, { role, name }, { 'Set-Cookie': sessionCookie(url, token, CONFIG.SESSION_HOURS * 3600) });
 }
 
+async function getTeacherPasswordPlain(db) {
+  const row = await one(db, "SELECT value FROM settings WHERE key = 'teacher_password_plain'");
+  return row?.value || 'tchr-salem-2026';
+}
+
 async function loadSession(ctx) {
-  const token = readCookie(ctx.request, cookieName(ctx.url));
-  if (!token || token.length > 100) return null;
+  const token = readSessionToken(ctx.request);
+  if (!token || token.length > 250) return null;
   const nowS = Math.floor(ctx.nowMs / 1000);
-  const s = await one(ctx.db,
-    'SELECT id, uid, role, expires_at FROM auth_sessions WHERE id = ?1 AND expires_at > ?2',
-    await sha256(token), nowS);
-  if (!s) return null;
-  const name = s.role === 'admin' ? 'الإدارة' : 'المعلم';
-  return { uid: s.uid, role: s.role, name, tokenId: s.id };
+  const tokenId = await sha256(token);
+
+  // Check if session was revoked via logout
+  try {
+    const rev = await one(ctx.db, 'SELECT 1 FROM session_revocations WHERE id = ?1', tokenId);
+    if (rev) return null;
+  } catch {}
+
+  // Check in local auth_sessions
+  try {
+    const s = await one(ctx.db,
+      'SELECT id, uid, role, expires_at FROM auth_sessions WHERE id = ?1 AND expires_at > ?2',
+      tokenId, nowS);
+    if (s) {
+      const name = s.role === 'admin' ? 'الإدارة' : 'المعلم';
+      return { uid: s.uid, role: s.role, name, tokenId: s.id };
+    }
+  } catch {}
+
+  // If not found in local auth_sessions (e.g. fresh lambda worker instance):
+  // Verify token signature against current password
+  const parts = token.split('.');
+  if (parts.length === 5) {
+    const role = parts[1];
+    let currentPwKey = '';
+    try {
+      currentPwKey = role === 'admin'
+        ? (ctx.env.DEV_ADMIN_PASSWORD || ctx.env.ADMIN_PASSWORD || 'Boss-Pass-123')
+        : (await getTeacherPasswordPlain(ctx.db));
+    } catch {}
+    const sessionSecret = `${ctx.env.SESSION_SECRET || 'school-hafth-session-2026'}:${currentPwKey}`;
+    const signed = await verifySignedSessionToken(token, nowS, sessionSecret);
+    if (signed) {
+      // Re-populate session in this container's SQLite DB
+      try {
+        await run(ctx.db,
+          'INSERT OR REPLACE INTO auth_sessions (id, uid, role, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)',
+          tokenId, signed.uid, signed.role, nowS, Number(parts[2]));
+      } catch {}
+      return { uid: signed.uid, role: signed.role, name: signed.name, tokenId };
+    }
+  }
+
+  return null;
 }
 
 const json = (status, data, headers = {}) =>
@@ -393,7 +487,14 @@ async function me({ db, user, nowMs }) {
 }
 
 async function logout({ db, user, url }) {
-  await run(db, 'DELETE FROM auth_sessions WHERE id = ?1', user.tokenId);
+  try {
+    await db.batch([
+      st(db, 'DELETE FROM auth_sessions WHERE id = ?1', user.tokenId),
+      st(db, 'INSERT OR REPLACE INTO session_revocations (id, revoked_at) VALUES (?1, ?2)', user.tokenId, Math.floor(Date.now() / 1000)),
+    ]);
+  } catch {
+    await run(db, 'DELETE FROM auth_sessions WHERE id = ?1', user.tokenId);
+  }
   return json(200, { ok: true }, { 'Set-Cookie': sessionCookie(url, '', 0) });
 }
 

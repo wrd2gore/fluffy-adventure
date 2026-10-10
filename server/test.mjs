@@ -277,7 +277,7 @@ test('قائمة المعلمين: إتاحة القائمة للمعلم، وإ
   // المعلم يستطيع قراءة قائمة المعلمين لاختيار هويته
   const list1 = await w.call('GET', '/api/teachers', { cookie: t });
   assert.equal(list1.status, 200);
-  assert.equal(list1.data.teachers.length, 47, 'القاعدة تحتوي على 47 معلماً كقيمة أولية');
+  assert.equal(list1.data.teachers.length, 0, 'القاعدة تبدأ بقائمة معلمين نظيفة فارغة');
 
   // الإدارة تضيف معلماً جديداً
   const addRes = await w.call('POST', '/api/admin/teachers', { cookie: a, body: { name: 'الأستاذ ناصر الشكيلي' } });
