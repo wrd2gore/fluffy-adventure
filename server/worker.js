@@ -575,7 +575,6 @@ async function saveRecord({ db, body, user, nowMs }) {
   const minDate = addDays(today, -CONFIG.MAX_BACKDATE_DAYS);
   if (date > today) throw bad('لا يمكن رصد الغياب لتاريخ في المستقبل');
   if (date < minDate) throw bad(`لا يمكن تسجيل غياب أقدم من ${CONFIG.MAX_BACKDATE_DAYS} يوماً`);
-  if (CONFIG.WEEKEND_DAYS.includes(dayOfWeek(date))) throw bad('لا يمكن الرصد في أيام العطلة الأسبوعية');
 
   const enrolled = new Set((await all(db, 'SELECT student_id FROM enrollments WHERE group_id = ?1', gid)).map((x) => x.student_id));
   const entries = arr(body.entries, 'الطلاب');
@@ -593,7 +592,21 @@ async function saveRecord({ db, body, user, nowMs }) {
 
   const existing = await one(db, 'SELECT id, teacher_name FROM records WHERE date = ?1 AND period = ?2 AND group_id = ?3', date, period, gid);
   if (existing) {
-    throw conflict(`هذه الحصة رُصدت سابقاً بواسطة ${existing.teacher_name}`);
+    if (existing.teacher_name !== teacherName && user.role !== 'admin') {
+      throw conflict(`هذه الحصة رُصدت سابقاً بواسطة ${existing.teacher_name}`);
+    }
+    const batch = [
+      st(db, 'UPDATE records SET teacher_name = ?1, created_at = ?2 WHERE id = ?3', teacherName, nowMs, existing.id),
+      st(db, 'DELETE FROM entries WHERE record_id = ?1', existing.id),
+    ];
+    for (const e of validEntries) {
+      batch.push(st(db,
+        'INSERT INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
+        existing.id, e.sid, e.status, e.note));
+    }
+    batch.push(auditStmt(db, teacherName, 'record.update', { date, period, group_id: gid, absent_count: validEntries.filter((x) => x.status === 'absent').length }));
+    await db.batch(batch);
+    return json(200, { ok: true, updated: true });
   }
 
   const batch = [

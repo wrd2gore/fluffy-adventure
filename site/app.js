@@ -362,8 +362,13 @@
           try { localStorage.setItem('selected_teacher_name', val); } catch (e) {}
           toast('أهلاً بك: ' + val);
           box.close();
-          if (onDone) onDone(val);
-          render();
+          if (onDone) {
+            onDone(val);
+            var bLabels = document.querySelectorAll('.teacher-name-label');
+            bLabels.forEach(function (b) { b.textContent = val; });
+          } else {
+            render();
+          }
         }
       });
       nameIn.addEventListener('keydown', function (e) {
@@ -594,7 +599,7 @@
       var isChosen = !!S.selectedTeacher;
       userBadge = h('div', { class: 'teacher-select-chip' + (isChosen ? '' : ' highlight') },
         icon('user'),
-        h('span', null, 'المعلم: ', h('b', { text: curTeacherName })),
+        h('span', null, 'المعلم: ', h('b', { class: 'teacher-name-label', text: curTeacherName })),
         btn(isChosen ? 'تغيير' : 'اختيار الاسم', {
           sm: true,
           ic: 'edit',
@@ -676,7 +681,9 @@
 
   /* ---------------------------------------------------------------- 6) رصد الغياب (المعلم) */
   function viewAttendance(host) {
-    var st = { date: lastSchoolDay(S.config.today), period: 1, gid: '', students: [], marks: {}, notes: {}, record: null, loaded: false };
+    var savedGid = '';
+    try { savedGid = localStorage.getItem('last_selected_gid') || ''; } catch (e) {}
+    var st = { date: lastSchoolDay(S.config.today), period: 1, gid: savedGid, students: [], marks: {}, notes: {}, record: null, loaded: false };
     var minDate = addDays(S.config.today, -S.config.max_backdate_days);
     var out = h('div');
     var dayLabel = h('span', { class: 'muted small' });
@@ -698,9 +705,18 @@
           h('span', { class: 'small muted', text: 'الحصة' }),
           per)),
       out);
-    loadGroups().then(function () {
-      mount(grpHolder, groupSelect(['basic', 'mobile'], st.gid, function (v) { st.gid = v; load(); }));
+    loadGroups().then(function (groups) {
+      if (savedGid && !groups.some(function (g) { return String(g.id) === String(savedGid); })) {
+        st.gid = '';
+      }
+      mount(grpHolder, groupSelect(['basic', 'mobile'], st.gid, function (v) {
+        st.gid = v;
+        try { localStorage.setItem('last_selected_gid', v); } catch (e) {}
+        load();
+      }));
       header();
+      if (st.gid) load();
+      else mount(out, empty('اختر الصف لعرض الطلاب', 'ثم اختر الحصة وسجّل الغياب والتأخير فقط؛ الباقون يُحسبون حاضرين.'));
     }).catch(fail);
 
     function counts() {
@@ -708,45 +724,102 @@
       st.students.forEach(function (s) { c[st.marks[s.id] || 'present']++; });
       return c;
     }
-    function load() {
+    function load(silent) {
       header();
       if (!st.gid) { mount(out, empty('اختر الصف لعرض الطلاب', 'ثم اختر الحصة وسجّل الغياب والتأخير فقط؛ الباقون يُحسبون حاضرين.')); return; }
-      if (isWeekend(st.date)) { mount(out, h('div', { class: 'note', text: 'هذا اليوم عطلة أسبوعية، اختر يوماً دراسياً.' })); return; }
       var token = (st.token = {});
-      mount(out, skeleton(4));
-      Promise.all([get('/api/groups/' + st.gid + '/students'), get('/api/record?' + qs({ date: st.date, period: st.period, group_id: st.gid }))]).then(function (r) {
+      if (!silent) mount(out, skeleton(4));
+      Promise.all([
+        get('/api/groups/' + st.gid + '/students'),
+        get('/api/record?' + qs({ date: st.date, period: st.period, group_id: st.gid }))
+      ]).then(function (r) {
         if (st.token !== token) return;
-        st.students = r[0].students; st.record = r[1].record; st.marks = {}; st.notes = {};
-        if (st.record) st.record.entries.forEach(function (e) { st.marks[e.student_id] = e.status; st.notes[e.student_id] = e.note; });
+        st.students = r[0].students;
+        st.record = r[1].record;
+        st.marks = {};
+        st.notes = {};
+        if (st.record && st.record.entries) {
+          st.record.entries.forEach(function (e) {
+            st.marks[e.student_id] = e.status;
+            st.notes[e.student_id] = e.note;
+          });
+        }
         paint();
-      }).catch(function (e) { if (st.token === token) mount(out, h('div', { class: 'note' }, h('b', { text: 'تعذر تحميل البيانات' }), h('p', { text: e.message }), btn('إعادة المحاولة', { sm: true, on: load }))); });
+      }).catch(function (e) {
+        if (st.token === token) mount(out, h('div', { class: 'note' }, h('b', { text: 'تعذر تحميل البيانات' }), h('p', { text: e.message }), btn('إعادة المحاولة', { sm: true, on: function () { load(); } })));
+      });
     }
 
     function paint() {
       if (!st.students.length) { mount(out, empty('لا يوجد طلاب في هذا الصف', 'تضيف الإدارة الطلاب من لوحة الإدارة.')); return; }
-      var locked = !!st.record;
+      var isRecorded = !!st.record;
+      var canEdit = !isRecorded || !st.record.teacher_name || st.record.teacher_name === S.selectedTeacher || (S.user && S.user.role === 'admin');
       var list = h('ul', { class: 'roll' });
       st.students.forEach(function (s) {
         var cur = st.marks[s.id] || 'present';
-        var seg = h('div', { class: 'seg' + (locked ? ' locked' : ''), role: 'radiogroup', 'aria-label': 'حالة ' + s.name },
+        var seg = h('div', { class: 'seg' + (isRecorded ? ' recorded' : ''), role: 'radiogroup', 'aria-label': 'حالة ' + s.name },
           ['present', 'absent', 'late'].map(function (v) {
-            return h('button', { type: 'button', role: 'radio', 'data-v': v, 'aria-checked': v === cur ? 'true' : 'false', disabled: locked && v !== cur }, icon(STATUS[v][1]), STATUS[v][0]);
+            return h('button', {
+              type: 'button',
+              role: 'radio',
+              'data-v': v,
+              'aria-checked': v === cur ? 'true' : 'false',
+              disabled: !canEdit
+            }, icon(STATUS[v][1]), STATUS[v][0]);
           }));
-        var why = h('input', { class: 'why', type: 'text', maxlength: '200', placeholder: 'العذر / ملاحظات', 'aria-label': 'ملاحظة ' + s.name, value: st.notes[s.id] || '', hidden: cur === 'present', disabled: locked, 'data-n': s.id });
+        var why = h('input', {
+          class: 'why',
+          type: 'text',
+          maxlength: '200',
+          placeholder: 'العذر / ملاحظات',
+          'aria-label': 'ملاحظة ' + s.name,
+          value: st.notes[s.id] || '',
+          hidden: cur === 'present',
+          disabled: !canEdit,
+          'data-n': s.id
+        });
         var seatDisplay = s.number.includes('-') ? s.number.split('-').slice(1).join('-') : s.number;
-        list.append(h('li', { 'data-id': s.id, 'data-s': cur }, h('span', { class: 'num', text: seatDisplay, title: s.number }), h('span', { class: 'nm', text: s.name }), seg, why));
+        list.append(h('li', { 'data-id': s.id, 'data-s': cur },
+          h('span', { class: 'num', text: seatDisplay, title: s.number }),
+          h('span', { class: 'nm', text: s.name }),
+          seg,
+          why));
       });
       var cntOk = h('span', { class: 'count ok' }), cntBad = h('span', { class: 'count bad' }), cntLate = h('span', { class: 'count warn' });
-      function paintCounts() { var c = counts(); cntOk.textContent = 'حاضر ' + c.present; cntBad.textContent = 'غائب ' + c.absent; cntLate.textContent = 'متأخر ' + c.late; }
+      function paintCounts() {
+        var c = counts();
+        cntOk.textContent = 'حاضر ' + c.present;
+        cntBad.textContent = 'غائب ' + c.absent;
+        cntLate.textContent = 'متأخر ' + c.late;
+      }
       paintCounts();
-      var save = btn('حفظ الرصد', { kind: 'primary', ic: 'check', type: 'button' });
+
+      var weekendAlert = isWeekend(st.date) ? h('div', { class: 'note warn', text: 'تنبيه: التاريخ المحدد يصادف عطلة أسبوعية.' }) : null;
+      var banner = null;
+      if (isRecorded) {
+        banner = h('div', { class: 'note ' + (canEdit ? 'ok' : 'info') },
+          h('b', { text: canEdit ? '✓ تم حفظ رصد هذه الحصة' : 'مغلق: رُصدت هذه الحصة سابقاً' }),
+          h('p', { text: canEdit
+            ? ('رُصدت باسم «' + st.record.teacher_name + '». يمكنك تعديل أي حالة ثم الضغط على «تحديث الرصد».')
+            : ('رصدها الأستاذ «' + st.record.teacher_name + '». للتعديل تواصل مع الإدارة.') }));
+      }
+
+      var save = btn(isRecorded ? 'تحديث الرصد' : 'حفظ الرصد', {
+        kind: 'primary',
+        ic: 'check',
+        type: 'button',
+        disabled: !canEdit
+      });
       save.onclick = function () {
         if (!S.selectedTeacher) {
           openTeacherSelectorModal(function () { save.click(); });
           return;
         }
         var c = counts();
-        confirmBox('حفظ رصد الحصة باسم «' + S.selectedTeacher + '»؟', 'غائب: ' + c.absent + '، متأخر: ' + c.late + '. بعد الحفظ لا يمكن تعديل الحصة إلا عبر الإدارة.', 'حفظ').then(function (ok) {
+        var confirmMsg = isRecorded
+          ? ('تحديث رصد الحصة باسم «' + S.selectedTeacher + '»؟ غائب: ' + c.absent + '، متأخر: ' + c.late + '، حاضر: ' + c.present + '.')
+          : ('حفظ رصد الحصة باسم «' + S.selectedTeacher + '»؟ غائب: ' + c.absent + '، متأخر: ' + c.late + '، حاضر: ' + c.present + '.');
+        confirmBox(isRecorded ? 'تأكيد تحديث الرصد' : 'تأكيد حفظ الرصد', confirmMsg, isRecorded ? 'تحديث' : 'حفظ').then(function (ok) {
           if (!ok) return;
           var entries = st.students.filter(function (s) { return (st.marks[s.id] || 'present') !== 'present'; })
             .map(function (s) { return { student_id: s.id, status: st.marks[s.id], note: st.notes[s.id] || '' }; });
@@ -759,19 +832,25 @@
               entries: entries
             });
           }).then(function () {
-            toast('تم حفظ الرصد بنجاح');
-            load();
-          }).catch(function (e) {
-            fail(e);
-            if (e.status === 409) load();
-          });
+            toast(isRecorded ? 'تم تحديث الرصد بنجاح' : 'تم حفظ الرصد بنجاح');
+            st.record = {
+              id: (st.record && st.record.id) || 1,
+              teacher_name: S.selectedTeacher,
+              created_at: Date.now(),
+              entries: entries
+            };
+            paint();
+            load(true);
+          }).catch(fail);
         });
       };
-      var banner = locked ? h('div', { class: 'note info', text: 'تم رصد هذه الحصة بواسطة «' + st.record.teacher_name + '». للتعديل تواصل مع الإدارة.' }) : null;
-      mount(out, banner, list, !locked && h('div', { class: 'savebar' }, h('div', { class: 'counts' }, cntOk, cntBad, cntLate), save),
-        locked && h('div', { class: 'savebar' }, h('div', { class: 'counts' }, cntOk, cntBad, cntLate)));
 
-      if (!locked) {
+      mount(out, weekendAlert, banner, list,
+        h('div', { class: 'savebar' },
+          h('div', { class: 'counts' }, cntOk, cntBad, cntLate),
+          canEdit ? save : null));
+
+      if (canEdit) {
         list.addEventListener('click', function (e) {
           var b = e.target.closest('button[data-v]'); if (!b) return;
           var li = b.closest('li'); var id = Number(li.getAttribute('data-id')); var v = b.getAttribute('data-v');
@@ -781,14 +860,21 @@
           if (v !== 'present') note.focus();
           paintCounts();
         });
-        list.addEventListener('input', function (e) { if (e.target.hasAttribute('data-n')) st.notes[Number(e.target.getAttribute('data-n'))] = e.target.value; });
+        list.addEventListener('input', function (e) {
+          if (e.target.hasAttribute('data-n')) {
+            st.notes[Number(e.target.getAttribute('data-n'))] = e.target.value;
+          }
+        });
       }
     }
 
     poll(function () {
       if (st.gid && !st.record) {
         get('/api/record?' + qs({ date: st.date, period: st.period, group_id: st.gid })).then(function (r) {
-          if (r.record && !st.record) { toast('رصد معلم آخر هذه الحصة للتو، تم تحديث الصفحة'); load(); }
+          if (r.record && !st.record) {
+            toast('رصد معلم آخر هذه الحصة للتو، تم تحديث الصفحة');
+            load(true);
+          }
         }).catch(function () {});
       }
     }, 15000);
@@ -832,7 +918,9 @@
           var row = h('tr', null, h('td', { text: idx + 1 }), h('td', null, ltr(s.number)), h('td', null, h('b', { text: s.name })));
           for (var pi = 1; pi <= r.periods_count; pi++) {
             var ent = s.periods[pi];
-            row.append(h('td', { class: 'center' }, ent ? stamp(ent.status) : '—'));
+            var isPeriodRecorded = !!(r.teachers_by_period && r.teachers_by_period[pi]);
+            var cellContent = ent ? stamp(ent.status) : (isPeriodRecorded ? stamp('present') : '—');
+            row.append(h('td', { class: 'center' }, cellContent));
           }
           var mob = s.mobile.map(function (m) { return m.group_name + ' (ح' + m.period + '): ' + STATUS[m.status][0]; }).join(' • ');
           row.append(h('td', { class: 'small' }, mob || '—'));

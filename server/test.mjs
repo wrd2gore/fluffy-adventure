@@ -418,7 +418,7 @@ test('رصد الحضور باسم المعلم المختار وقفل الحص
   assert.equal(recRes.status, 200);
   assert.equal(recRes.data.record.teacher_name, 'الاستاذ احمد اسلامية');
 
-  // محاولة رصد نفس الحصة مرة أخرى → تعطي 409 مع اسم المعلم الذي رصدها
+  // محاولة رصد نفس الحصة مرة أخرى من معلم آخر → تعطي 409 مع اسم المعلم الذي رصدها
   const dupRes = await w.call('POST', '/api/record', {
     cookie: t,
     body: {
@@ -431,6 +431,26 @@ test('رصد الحضور باسم المعلم المختار وقفل الحص
   });
   assert.equal(dupRes.status, 409);
   assert.match(dupRes.data.message, /الاستاذ احمد اسلامية/);
+
+  // قيام نفس المعلم بتحديث الرصد → ينجح 200 ويُحدث السجل
+  const updateRes = await w.call('POST', '/api/record', {
+    cookie: t,
+    body: {
+      date: DAY.tue,
+      period: 1,
+      group_id: g.group.id,
+      teacher_name: 'الاستاذ احمد اسلامية',
+      entries: [
+        { student_id: sList[0].id, status: 'absent', note: 'مريض' },
+        { student_id: sList[1].id, status: 'late', note: 'تأخر بالباص' },
+      ],
+    },
+  });
+  assert.equal(updateRes.status, 200);
+  assert.equal(updateRes.data.updated, true);
+
+  const recUpdated = await w.call('GET', `/api/record?date=${DAY.tue}&period=1&group_id=${g.group.id}`, { cookie: t });
+  assert.equal(recUpdated.data.record.entries.length, 2);
 });
 
 test('التقرير اليومي والأسبوعي والشهري', async () => {
