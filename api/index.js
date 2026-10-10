@@ -205,6 +205,9 @@ export default async function handler(req, res) {
     }
 
     // Vercel Node.js Serverless Function (req, res)
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+
     // Resolve request URL (handling Vercel rewrites, x-matched-path, and __path parameter)
     let rawPath = req.url || '/api';
     const tempUrl = new URL(rawPath, `${proto}://${host}`);
