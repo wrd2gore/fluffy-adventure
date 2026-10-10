@@ -1,6 +1,14 @@
 {
   "outputDirectory": "site",
   "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/api", "destination": "/api/index.js?__path=/api" },
     { "source": "/api/(.*)", "destination": "/api/index.js?__path=/api/$1" }
