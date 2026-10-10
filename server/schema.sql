@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS login_fail_k ON login_fail (k, at);
 -- الطلاب: الرقم هو المفتاح، لذلك يرتبط الطالب تلقائياً بصفه الأساسي وبالمواد المتنقلة
 CREATE TABLE IF NOT EXISTS students (
   id     INTEGER PRIMARY KEY,
-  number TEXT NOT NULL UNIQUE,
+  number TEXT NOT NULL,
   name   TEXT NOT NULL
 );
 

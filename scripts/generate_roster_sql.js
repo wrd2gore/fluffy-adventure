@@ -46,12 +46,12 @@ for (const cname of sortedClassNames) {
   const list = rawData[cname];
   list.forEach((st, idx) => {
     const seatNum = parseInt(st.num) || (idx + 1);
-    const uniqueNumber = `${meta.code}-${seatNum}`;
+    const cleanNumber = String(seatNum);
     const sId = studentAutoId++;
 
     students.push({
       id: sId,
-      number: uniqueNumber,
+      number: cleanNumber,
       name: st.name
     });
 

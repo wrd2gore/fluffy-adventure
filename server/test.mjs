@@ -378,6 +378,14 @@ test('الصفوف: إنشاء وحذف وإضافة طلاب', async () => {
   const add = await w.call('POST', `/api/admin/groups/${basic.group.id}/students`, { cookie: a, body: { students: [{ number: '99', name: 'طالب إضافي' }] } });
   assert.equal(add.status, 200);
 
+  // تعديل طالب
+  const studentsList = (await w.call('GET', `/api/groups/${basic.group.id}/students`, { cookie: a })).data.students;
+  const addedStudent = studentsList.find((s) => s.number === '99');
+  assert.ok(addedStudent);
+  const up = await w.call('PUT', `/api/admin/groups/${basic.group.id}/students/${addedStudent.id}`, { cookie: a, body: { number: '100', name: 'طالب معدل' } });
+  assert.equal(up.status, 200);
+  assert.equal(up.data.student.number, '100');
+
   // حذف الصف
   const del = await w.call('DELETE', `/api/admin/groups/${basic.group.id}`, { cookie: a });
   assert.equal(del.status, 200);

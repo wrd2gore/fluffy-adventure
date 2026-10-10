@@ -504,20 +504,51 @@ async function listPublicTeachers({ db }) {
   return json(200, { teachers });
 }
 
+function gradeOrder(name) {
+  if (!name) return 99;
+  if (name.includes('حادي عشر')) return 11;
+  if (name.includes('ثاني عشر')) return 12;
+  if (name.includes('عاشر')) return 10;
+  if (name.includes('تاسع')) return 9;
+  if (name.includes('ثامن')) return 8;
+  if (name.includes('سابع')) return 7;
+  if (name.includes('سادس')) return 6;
+  if (name.includes('خامس')) return 5;
+  return 99;
+}
+
+function classNumber(name) {
+  const m = (name || '').match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function sortGroups(groups) {
+  return [...groups].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'basic' ? -1 : 1;
+    const ga = gradeOrder(a.name);
+    const gb = gradeOrder(b.name);
+    if (ga !== gb) return ga - gb;
+    const na = classNumber(a.name);
+    const nb = classNumber(b.name);
+    if (na !== nb) return na - nb;
+    return (a.name || '').localeCompare(b.name || '', 'ar');
+  });
+}
+
 // ------------------------------------------------------------------ 6) إدارة سجلات الغياب والصفوف والتقارير
 async function listGroups({ db }) {
   const groups = await all(db,
     `SELECT g.id, g.name, g.kind, COUNT(e.student_id) AS student_count
        FROM groups g LEFT JOIN enrollments e ON e.group_id = g.id
-      GROUP BY g.id ORDER BY g.kind, g.name`);
-  return json(200, { groups });
+      GROUP BY g.id`);
+  return json(200, { groups: sortGroups(groups) });
 }
 
 async function listStudents({ db, params }) {
   const id = idOf(params.id, 'الصف');
   const students = await all(db,
     `SELECT s.id, s.number, s.name FROM enrollments e JOIN students s ON s.id = e.student_id
-      WHERE e.group_id = ?1 ORDER BY LENGTH(s.number), s.number`, id);
+      WHERE e.group_id = ?1 ORDER BY CAST(s.number AS INTEGER), s.number`, id);
   return json(200, { students });
 }
 
@@ -677,14 +708,16 @@ async function createGroup({ db, body, user }) {
     cleanStudents.push({ number: num, name: sName });
   }
 
-  const batch = [st(db, 'INSERT INTO groups (name, kind) VALUES (?1, ?2)', name, kind)];
-  for (const s of cleanStudents) {
-    batch.push(st(db, 'INSERT INTO students (number, name) VALUES (?1, ?2) ON CONFLICT(number) DO UPDATE SET name = excluded.name', s.number, s.name));
-    batch.push(st(db, 'INSERT OR IGNORE INTO enrollments (group_id, student_id) VALUES ((SELECT id FROM groups WHERE name = ?1), (SELECT id FROM students WHERE number = ?2))', name, s.number));
-  }
-  batch.push(auditStmt(db, user.name, 'group.create', { name, kind, student_count: cleanStudents.length }));
-  await db.batch(batch);
+  await run(db, 'INSERT INTO groups (name, kind) VALUES (?1, ?2)', name, kind);
   const created = await one(db, 'SELECT id, name, kind FROM groups WHERE name = ?1', name);
+  for (const s of cleanStudents) {
+    await run(db, 'INSERT INTO students (number, name) VALUES (?1, ?2)', s.number, s.name);
+    const row = await one(db, 'SELECT last_insert_rowid() AS id');
+    if (row?.id) {
+      await run(db, 'INSERT OR IGNORE INTO enrollments (group_id, student_id) VALUES (?1, ?2)', created.id, row.id);
+    }
+  }
+  await audit(db, user.name, 'group.create', { name, kind, student_count: cleanStudents.length });
   return json(201, { group: created, student_count: cleanStudents.length });
 }
 
@@ -703,16 +736,34 @@ async function addStudents({ db, params, body, user }) {
   const gid = idOf(params.id, 'الصف');
   const g = await requireGroup(db, gid);
   const input = arr(body.students, 'الطلاب', { min: 1 });
-  const batch = [];
+  const added = [];
   for (const s of input) {
     const num = latinDigits(str(s.number, 'رقم الطالب', { max: 40 }));
     const sName = str(s.name, 'اسم الطالب', { max: 100 });
-    batch.push(st(db, 'INSERT INTO students (number, name) VALUES (?1, ?2) ON CONFLICT(number) DO UPDATE SET name = excluded.name', num, sName));
-    batch.push(st(db, 'INSERT OR IGNORE INTO enrollments (group_id, student_id) VALUES (?1, (SELECT id FROM students WHERE number = ?2))', gid, num));
+    await run(db, 'INSERT INTO students (number, name) VALUES (?1, ?2)', num, sName);
+    const row = await one(db, 'SELECT last_insert_rowid() AS id');
+    if (row?.id) {
+      await run(db, 'INSERT OR IGNORE INTO enrollments (group_id, student_id) VALUES (?1, ?2)', gid, row.id);
+      added.push({ id: row.id, number: num, name: sName });
+    }
   }
-  batch.push(auditStmt(db, user.name, 'students.add', { group_id: gid, group_name: g.name, count: input.length }));
-  await db.batch(batch);
-  return json(200, { ok: true, count: input.length });
+  await audit(db, user.name, 'students.add', { group_id: gid, group_name: g.name, count: input.length });
+  return json(200, { ok: true, count: input.length, students: added });
+}
+
+async function updateStudent({ db, params, body, user }) {
+  const gid = idOf(params.id, 'الصف');
+  const sid = idOf(params.sid, 'الطالب');
+  await requireGroup(db, gid);
+  const s = await one(db, 'SELECT id, number, name FROM students WHERE id = ?1', sid);
+  if (!s) throw notFound('الطالب غير موجود');
+  const num = latinDigits(str(body.number != null ? body.number : s.number, 'رقم الطالب', { max: 40 }));
+  const sName = str(body.name != null ? body.name : s.name, 'اسم الطالب', { max: 100 });
+  await db.batch([
+    st(db, 'UPDATE students SET number = ?1, name = ?2 WHERE id = ?3', num, sName, sid),
+    auditStmt(db, user.name, 'student.update', { group_id: gid, student_id: sid, old: { number: s.number, name: s.name }, next: { number: num, name: sName } }),
+  ]);
+  return json(200, { ok: true, student: { id: sid, number: num, name: sName } });
 }
 
 async function removeStudent({ db, params, user }) {
@@ -931,6 +982,7 @@ export const ROUTES = [
   ['POST', '/api/admin/groups', 'admin', createGroup],
   ['DELETE', '/api/admin/groups/:id', 'admin', deleteGroup],
   ['POST', '/api/admin/groups/:id/students', 'admin', addStudents],
+  ['PUT', '/api/admin/groups/:id/students/:sid', 'admin', updateStudent],
   ['DELETE', '/api/admin/groups/:id/students/:sid', 'admin', removeStudent],
   ['GET', '/api/admin/passwords', 'admin', getAdminPasswords],
   ['PUT', '/api/admin/passwords/teacher', 'admin', updateTeacherPassword],

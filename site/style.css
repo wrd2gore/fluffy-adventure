@@ -1178,3 +1178,21 @@ tbody tr:hover { background: var(--surface2); }
   font-family: monospace; font-size: 1.25rem; font-weight: 700;
   letter-spacing: 1px; color: var(--accent); user-select: all; direction: ltr;
 }
+
+/* ---- تنسيق تصنيفات الصفوف في القوائم المنسدلة ---- */
+optgroup {
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--surface2);
+  padding: 6px 0;
+}
+:root[data-theme="light"] optgroup {
+  color: var(--brand);
+}
+optgroup option {
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface);
+  padding: 6px 12px;
+}
+

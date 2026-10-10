@@ -56,7 +56,7 @@ CREATE INDEX IF NOT EXISTS login_fail_k ON login_fail (k, at);
 
 CREATE TABLE IF NOT EXISTS students (
   id     INTEGER PRIMARY KEY,
-  number TEXT NOT NULL UNIQUE,
+  number TEXT NOT NULL,
   name   TEXT NOT NULL
 );
 
@@ -150,10 +150,20 @@ function getDb() {
     `);
   } catch {}
 
-  // Auto-seed all 30 classes and 893 students if not already present
+  // Auto-seed all 30 classes and 893 students if not already present or if using old number format
   try {
     const groupCount = raw.prepare('SELECT COUNT(*) as c FROM groups').all()[0]?.c || 0;
-    if (groupCount < 30) {
+    const sampleStudent = raw.prepare('SELECT number FROM students LIMIT 1').all()[0]?.number || '';
+    if (groupCount < 30 || sampleStudent.includes('-') || sampleStudent.includes('/')) {
+      raw.exec(`
+        PRAGMA foreign_keys = OFF;
+        DELETE FROM entries;
+        DELETE FROM records;
+        DELETE FROM enrollments;
+        DELETE FROM students;
+        DELETE FROM groups;
+        PRAGMA foreign_keys = ON;
+      `);
       raw.exec(ROSTER_SQL);
     }
   } catch (err) {

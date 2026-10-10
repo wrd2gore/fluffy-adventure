@@ -149,6 +149,11 @@
   var isWeekend = function (d) { return S.config.weekend_days.indexOf(dow(d)) >= 0; };
   var STATUS = { present: ['حاضر', 'check'], absent: ['غائب', 'x'], late: ['متأخر', 'clock'] };
 
+  function stamp(status) {
+    var s = STATUS[status] || STATUS.present;
+    return h('span', { class: 'stamp ' + status }, icon(s[1]), ' ' + s[0]);
+  }
+
   function downloadCSV(name, rows) {
     var text = '﻿' + rows.map(function (r) { return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
     var a = h('a', { download: name, href: URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })) });
@@ -201,9 +206,44 @@
   }
   var app = document.getElementById('app');
 
+  function getGroupGradeInfo(g) {
+    var name = (g && g.name) ? g.name : '';
+    if (g && g.kind === 'mobile') return { order: 90, label: 'المواد المتنقلة' };
+    if (name.indexOf('حادي عشر') >= 0) return { order: 11, label: 'الصف الحادي عشر' };
+    if (name.indexOf('ثاني عشر') >= 0) return { order: 12, label: 'الصف الثاني عشر' };
+    if (name.indexOf('عاشر') >= 0) return { order: 10, label: 'الصف العاشر' };
+    if (name.indexOf('تاسع') >= 0) return { order: 9, label: 'الصف التاسع' };
+    if (name.indexOf('ثامن') >= 0) return { order: 8, label: 'الصف الثامن' };
+    if (name.indexOf('سابع') >= 0) return { order: 7, label: 'الصف السابع' };
+    if (name.indexOf('سادس') >= 0) return { order: 6, label: 'الصف السادس' };
+    if (name.indexOf('خامس') >= 0) return { order: 5, label: 'الصف الخامس' };
+    return { order: 99, label: (g && g.kind === 'basic') ? 'صفوف أخرى' : 'مواد أخرى' };
+  }
+
+  function getGroupNumber(name) {
+    var m = (name || '').match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function sortGroupsList(list) {
+    return (list || []).slice().sort(function (a, b) {
+      if (a.kind !== b.kind) return a.kind === 'basic' ? -1 : 1;
+      var ga = getGroupGradeInfo(a);
+      var gb = getGroupGradeInfo(b);
+      if (ga.order !== gb.order) return ga.order - gb.order;
+      var na = getGroupNumber(a.name);
+      var nb = getGroupNumber(b.name);
+      if (na !== nb) return na - nb;
+      return (a.name || '').localeCompare(b.name || '', 'ar');
+    });
+  }
+
   function loadGroups(force) {
     if (S.groups && !force) return Promise.resolve(S.groups);
-    return get('/api/groups').then(function (r) { S.groups = r.groups; return S.groups; });
+    return get('/api/groups').then(function (r) {
+      S.groups = sortGroupsList(r.groups);
+      return S.groups;
+    });
   }
 
   function loadTeachersRoster(force) {
@@ -576,12 +616,36 @@
   }
 
   function groupSelect(kinds, value, onchange) {
-    var sel = h('select', { 'aria-label': 'الصف أو المادة', onchange: function () { onchange(sel.value); } }, h('option', { value: '', text: '— اختر الصف أو المادة —' }));
-    var cats = { basic: 'الصفوف الأساسية', mobile: 'المواد المتنقلة' };
-    kinds.forEach(function (k) {
-      var list = (S.groups || []).filter(function (g) { return g.kind === k; });
-      if (list.length) sel.append(h('optgroup', { label: cats[k] }, list.map(function (g) { return h('option', { value: g.id, text: g.name + ' (' + g.student_count + ')' }); })));
+    var sel = h('select', { 'aria-label': 'الصف أو المادة', onchange: function () { onchange(sel.value); } },
+      h('option', { value: '', text: '— اختر الصف أو المادة —' }));
+
+    var filtered = (S.groups || []).filter(function (g) {
+      return kinds.indexOf(g.kind) !== -1;
     });
+    var sorted = sortGroupsList(filtered);
+
+    var categoryMap = {};
+    var categoryOrder = [];
+
+    sorted.forEach(function (g) {
+      var info = getGroupGradeInfo(g);
+      var catLabel = info.label;
+      if (!categoryMap[catLabel]) {
+        categoryMap[catLabel] = [];
+        categoryOrder.push(catLabel);
+      }
+      categoryMap[catLabel].push(g);
+    });
+
+    categoryOrder.forEach(function (catLabel) {
+      var list = categoryMap[catLabel];
+      if (list && list.length) {
+        sel.append(h('optgroup', { label: catLabel }, list.map(function (g) {
+          return h('option', { value: g.id, text: g.name + ' (' + g.student_count + ')' });
+        })));
+      }
+    });
+
     sel.value = value || '';
     return sel;
   }
@@ -881,24 +945,61 @@
 
     function openStudentsModal(g) {
       get('/api/groups/' + g.id + '/students').then(function (r) {
-        var numIn = h('input', { type: 'text', placeholder: 'رقم الطالب' });
+        function calcNextNum() {
+          var maxNum = 0;
+          (r.students || []).forEach(function (s) {
+            var val = parseInt(s.number, 10);
+            if (!isNaN(val) && val > maxNum) maxNum = val;
+          });
+          return String(maxNum > 0 ? maxNum + 1 : ((r.students ? r.students.length : 0) + 1));
+        }
+
+        var numIn = h('input', { type: 'text', placeholder: 'رقم الطالب', value: calcNextNum() });
         var nameIn = h('input', { type: 'text', placeholder: 'اسم الطالب' });
         var addOne = btn('إضافة طالب', { sm: true, kind: 'primary', ic: 'plus' });
         var rowsHost = h('div', { class: 't-wrap' });
 
         function drawRows() {
           mount(rowsHost, h('table', null,
-            h('thead', null, h('tr', null, h('th', { text: 'الرقم' }), h('th', { text: 'الاسم' }), h('th', { text: 'حذف' }))),
-            h('tbody', null, r.students.map(function (s) {
+            h('thead', null, h('tr', null, h('th', { text: 'الرقم' }), h('th', { text: 'الاسم' }), h('th', { text: 'تعديل' }), h('th', { text: 'حذف' }))),
+            h('tbody', null, (r.students || []).map(function (s) {
               return h('tr', null,
                 h('td', null, ltr(s.number)),
                 h('td', null, h('b', { text: s.name })),
+                h('td', null, btn('تعديل', { sm: true, ic: 'sparkles', on: function () {
+                  var editNum = h('input', { type: 'text', value: s.number, placeholder: 'الرقم الجديد' });
+                  var editName = h('input', { type: 'text', value: s.name, placeholder: 'الاسم الجديد' });
+                  var saveEdit = btn('حفظ التعديل', { sm: true, kind: 'primary', on: function () {
+                    var nextN = editNum.value.trim();
+                    var nextNm = editName.value.trim();
+                    if (!nextN || !nextNm) return toast('يرجى كتابة الرقم والاسم', true);
+                    busy(saveEdit, function () {
+                      return api('PUT', '/api/admin/groups/' + g.id + '/students/' + s.id, { number: nextN, name: nextNm });
+                    }).then(function () {
+                      s.number = nextN;
+                      s.name = nextNm;
+                      r.students.sort(function (a, b) { return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0); });
+                      drawRows();
+                      numIn.value = calcNextNum();
+                      editBox.close();
+                      toast('تم تعديل بيانات الطالب بنجاح');
+                    }).catch(fail);
+                  } });
+                  var editBox = overlay([
+                    h('h3', { text: 'تعديل بيانات الطالب في «' + g.name + '»' }),
+                    h('div', { class: 'grid', style: 'margin: 14px 0;' }, field('الرقم في الصف', editNum), field('اسم الطالب', editName)),
+                    h('div', { class: 'acts' }, btn('إلغاء', { on: function () { editBox.close(); } }), saveEdit)
+                  ]);
+                } })),
                 h('td', null, btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
-                  api('DELETE', '/api/admin/groups/' + g.id + '/students/' + s.id).then(function () {
-                    r.students = r.students.filter(function (x) { return x.id !== s.id; });
-                    drawRows();
-                    loadGroups(true).then(paint).catch(fail);
-                  }).catch(fail);
+                  confirmBox('حذف الطالب؟', 'سيُحذف «' + s.name + '» من صف «' + g.name + '».', 'حذف', true).then(function (ok) {
+                    if (ok) api('DELETE', '/api/admin/groups/' + g.id + '/students/' + s.id).then(function () {
+                      r.students = r.students.filter(function (x) { return x.id !== s.id; });
+                      drawRows();
+                      numIn.value = calcNextNum();
+                      loadGroups(true).then(paint).catch(fail);
+                    }).catch(fail);
+                  });
                 } })));
             }))));
         }
@@ -908,8 +1009,14 @@
           if (!num || !nm) return toast('اكتب رقم الطالب واسمه', true);
           busy(addOne, function () { return post('/api/admin/groups/' + g.id + '/students', { students: [{ number: num, name: nm }] }); })
             .then(function () {
-              toast('تمت إضافة الطالب'); numIn.value = ''; nameIn.value = '';
-              get('/api/groups/' + g.id + '/students').then(function (res) { r.students = res.students; drawRows(); loadGroups(true).then(paint).catch(fail); });
+              toast('تمت إضافة الطالب بنجاح'); nameIn.value = '';
+              get('/api/groups/' + g.id + '/students').then(function (res) {
+                r.students = res.students;
+                drawRows();
+                numIn.value = calcNextNum();
+                nameIn.focus();
+                loadGroups(true).then(paint).catch(fail);
+              });
             }).catch(fail);
         };
 
