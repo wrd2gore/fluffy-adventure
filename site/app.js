@@ -669,7 +669,8 @@
             return h('button', { type: 'button', role: 'radio', 'data-v': v, 'aria-checked': v === cur ? 'true' : 'false', disabled: locked && v !== cur }, icon(STATUS[v][1]), STATUS[v][0]);
           }));
         var why = h('input', { class: 'why', type: 'text', maxlength: '200', placeholder: 'العذر / ملاحظات', 'aria-label': 'ملاحظة ' + s.name, value: st.notes[s.id] || '', hidden: cur === 'present', disabled: locked, 'data-n': s.id });
-        list.append(h('li', { 'data-id': s.id, 'data-s': cur }, h('span', { class: 'num', text: s.number }), h('span', { class: 'nm', text: s.name }), seg, why));
+        var seatDisplay = s.number.includes('-') ? s.number.split('-').slice(1).join('-') : s.number;
+        list.append(h('li', { 'data-id': s.id, 'data-s': cur }, h('span', { class: 'num', text: seatDisplay, title: s.number }), h('span', { class: 'nm', text: s.name }), seg, why));
       });
       var cntOk = h('span', { class: 'count ok' }), cntBad = h('span', { class: 'count bad' }), cntLate = h('span', { class: 'count warn' });
       function paintCounts() { var c = counts(); cntOk.textContent = 'حاضر ' + c.present; cntBad.textContent = 'غائب ' + c.absent; cntLate.textContent = 'متأخر ' + c.late; }

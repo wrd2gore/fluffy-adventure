@@ -125,6 +125,8 @@ function makeD1(raw) {
   };
 }
 
+import { ROSTER_SQL } from './seed_roster.js';
+
 let dbInstance = null;
 
 function getDb() {
@@ -147,6 +149,17 @@ function getDb() {
       DELETE FROM teachers WHERE created_at = 1700000000000;
     `);
   } catch {}
+
+  // Auto-seed all 30 classes and 893 students if not already present
+  try {
+    const groupCount = raw.prepare('SELECT COUNT(*) as c FROM groups').all()[0]?.c || 0;
+    if (groupCount < 30) {
+      raw.exec(ROSTER_SQL);
+    }
+  } catch (err) {
+    console.error('Error seeding roster:', err);
+  }
+
   dbInstance = makeD1(raw);
   return dbInstance;
 }
