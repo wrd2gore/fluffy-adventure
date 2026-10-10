@@ -148,6 +148,7 @@ function getDb() {
       UPDATE settings SET value = 'الأستاذ طلال الهنائي' WHERE key = 'principal_name';
       DELETE FROM teachers WHERE created_at = 1700000000000;
       UPDATE settings SET value = 'teacher@77' WHERE key = 'teacher_password_plain' AND value = 'tchr-salem-2026';
+      DELETE FROM login_fail;
     `);
     const plainPw = raw.prepare("SELECT value FROM settings WHERE key = 'teacher_password_plain'").all()[0]?.value;
     if (plainPw === 'teacher@77') {
