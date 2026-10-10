@@ -590,37 +590,38 @@ async function saveRecord({ db, body, user, nowMs }) {
     validEntries.push({ sid, status, note });
   }
 
+  let recId;
   const existing = await one(db, 'SELECT id, teacher_name FROM records WHERE date = ?1 AND period = ?2 AND group_id = ?3', date, period, gid);
   if (existing) {
     if (existing.teacher_name !== teacherName && user.role !== 'admin') {
       throw conflict(`هذه الحصة رُصدت سابقاً بواسطة ${existing.teacher_name}`);
     }
-    const batch = [
-      st(db, 'UPDATE records SET teacher_name = ?1, created_at = ?2 WHERE id = ?3', teacherName, nowMs, existing.id),
-      st(db, 'DELETE FROM entries WHERE record_id = ?1', existing.id),
-    ];
-    for (const e of validEntries) {
-      batch.push(st(db,
-        'INSERT INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
-        existing.id, e.sid, e.status, e.note));
+    recId = existing.id;
+    await run(db, 'UPDATE records SET teacher_name = ?1, created_at = ?2 WHERE id = ?3', teacherName, nowMs, recId);
+    await run(db, 'DELETE FROM entries WHERE record_id = ?1', recId);
+  } else {
+    const insertRes = await run(db,
+      'INSERT INTO records (date, period, group_id, teacher_uid, teacher_name, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
+      date, period, gid, 'teacher', teacherName, nowMs
+    );
+    recId = insertRes.meta?.last_row_id;
+    if (!recId) {
+      const row = await one(db, 'SELECT id FROM records WHERE date = ?1 AND period = ?2 AND group_id = ?3', date, period, gid);
+      recId = row?.id;
     }
-    batch.push(auditStmt(db, teacherName, 'record.update', { date, period, group_id: gid, absent_count: validEntries.filter((x) => x.status === 'absent').length }));
-    await db.batch(batch);
-    return json(200, { ok: true, updated: true });
   }
 
-  const batch = [
-    st(db, 'INSERT INTO records (date, period, group_id, teacher_uid, teacher_name, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
-      date, period, gid, 'teacher', teacherName, nowMs),
-  ];
+  const batch = [];
   for (const e of validEntries) {
     batch.push(st(db,
-      'INSERT INTO entries (record_id, student_id, status, note) VALUES ((SELECT id FROM records WHERE date = ?1 AND period = ?2 AND group_id = ?3), ?4, ?5, ?6)',
-      date, period, gid, e.sid, e.status, e.note));
+      'INSERT INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
+      recId, e.sid, e.status, e.note));
   }
-  batch.push(auditStmt(db, teacherName, 'record.save', { date, period, group_id: gid, absent_count: validEntries.filter((x) => x.status === 'absent').length }));
+  batch.push(auditStmt(db, teacherName, existing ? 'record.update' : 'record.save', {
+    date, period, group_id: gid, absent_count: validEntries.filter((x) => x.status === 'absent').length
+  }));
   await db.batch(batch);
-  return json(201, { ok: true });
+  return json(existing ? 200 : 201, { ok: true, updated: !!existing });
 }
 
 async function dailyReport({ db, query, nowMs }) {
