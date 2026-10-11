@@ -8,5 +8,9 @@
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/api", "destination": "/api?__path=/api" },
+    { "source": "/api/(.*)", "destination": "/api?__path=/api/$1" }
   ]
 }
