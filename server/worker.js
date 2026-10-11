@@ -336,24 +336,16 @@ export async function ensureSchema(db, env = {}) {
   const isTest = typeof process !== 'undefined' && (process.env?.NODE_TEST_CONTEXT || (process.argv?.[1] && process.argv[1].includes('test.mjs')));
   if (!isTest) {
     try {
-      await run(db, `
-        INSERT OR IGNORE INTO teachers (name, created_at) VALUES
-          ('جمال الدين احمد الطيب', 1700000000001),
-          ('محمد', 1700000000002),
-          ('أ. ابوبكر منصوري', 1700000000003),
-          ('وليد سعفان', 1700000000004)
-      `);
-      await run(db, `
-        INSERT OR IGNORE INTO teachers (name, created_at)
-        SELECT DISTINCT TRIM(teacher_name), MIN(created_at)
-          FROM records
-         WHERE teacher_name IS NOT NULL AND TRIM(teacher_name) != ''
-         GROUP BY TRIM(teacher_name)
-      `);
-    } catch {}
-
-    try {
-      await syncFromCloud(db);
+      const tCount = await one(db, 'SELECT COUNT(*) as count FROM teachers');
+      if (!tCount || tCount.count === 0) {
+        await run(db, `
+          INSERT OR IGNORE INTO teachers (name, created_at) VALUES
+            ('جمال الدين احمد الطيب', 1700000000001),
+            ('محمد', 1700000000002),
+            ('أ. ابوبكر منصوري', 1700000000003),
+            ('وليد سعفان', 1700000000004)
+        `);
+      }
     } catch {}
   }
 
@@ -1023,7 +1015,7 @@ async function deleteTeacher({ db, params, user }) {
   const t = await one(db, 'SELECT id, name FROM teachers WHERE id = ?1', id);
   if (!t) throw notFound('المعلم غير موجود');
   await db.batch([
-    st(db, 'DELETE FROM teachers WHERE id = ?1', id),
+    st(db, 'DELETE FROM teachers WHERE id = ?1 OR TRIM(name) = ?2', id, t.name.trim()),
     auditStmt(db, user.name, 'teacher.delete', { id: t.id, name: t.name }),
   ]);
   syncTeacherDeleted(t.name).catch(() => {});
