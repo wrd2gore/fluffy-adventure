@@ -1,5 +1,4 @@
-# إعداد النشر على Cloudflare. لا تضع هنا أي أسرار: الأسرار تُضاف بأمر wrangler secret put (انظر المجلد guide).
-name = "hafth-attendance"
+name = "muneeralsalhi"
 main = "worker.js"
 compatibility_date = "2025-09-01"
 

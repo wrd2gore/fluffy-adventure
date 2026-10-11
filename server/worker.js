@@ -764,17 +764,30 @@ async function weeklyReport({ db, query, nowMs }) {
   const from = addDays(date, -dayOfWeek(date));
   const to = addDays(from, 6);
   const counts = await all(db,
-    `SELECT teacher_name AS name, COUNT(*) AS sessions FROM records
-      WHERE date BETWEEN ?1 AND ?2 AND CAST(strftime('%w', date) AS INTEGER) NOT IN (?3, ?4)
-      GROUP BY teacher_name`, from, to, CONFIG.WEEKEND_DAYS[0], CONFIG.WEEKEND_DAYS[1]);
-  const teachers = await all(db, 'SELECT id, name FROM teachers');
-  const byName = new Map(counts.map((c) => [c.name, c.sessions]));
-  const list = teachers.map((t) => ({ id: t.id, name: t.name, sessions: byName.get(t.name) ?? 0 }));
+    `SELECT TRIM(teacher_name) AS name, COUNT(*) AS sessions FROM records
+      WHERE date BETWEEN ?1 AND ?2 AND teacher_name IS NOT NULL AND TRIM(teacher_name) != '' AND CAST(strftime('%w', date) AS INTEGER) NOT IN (?3, ?4)
+      GROUP BY TRIM(teacher_name)`, from, to, CONFIG.WEEKEND_DAYS[0], CONFIG.WEEKEND_DAYS[1]);
+  const teachers = await all(db, 'SELECT id, TRIM(name) AS name FROM teachers ORDER BY name COLLATE NOCASE');
+  const byName = new Map();
   for (const c of counts) {
-    if (!teachers.some((t) => t.name === c.name)) list.push({ name: c.name, sessions: c.sessions });
+    if (c.name) byName.set(c.name, Number(c.sessions) || 0);
+  }
+  const seen = new Set();
+  const list = [];
+  for (const t of teachers) {
+    const n = (t.name || '').trim();
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    list.push({ id: t.id, name: n, sessions: byName.get(n) ?? 0 });
+  }
+  for (const c of counts) {
+    const n = (c.name || '').trim();
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    list.push({ id: null, name: n, sessions: c.sessions });
   }
   const total = list.reduce((n, t) => n + t.sessions, 0);
-  list.sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name, 'ar'));
+  list.sort((a, b) => b.sessions - a.sessions || (a.name || '').localeCompare(b.name || '', 'ar'));
   return json(200, {
     from, to, total,
     teachers: list.map((t) => ({ name: t.name, sessions: t.sessions, percent: total ? Math.round((t.sessions / total) * 1000) / 10 : 0 })),
