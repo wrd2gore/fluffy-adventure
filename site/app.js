@@ -163,20 +163,28 @@
 
   /* ---------------------------------------------------------------- 2) الاتصال بالخادم */
   function ApiError(message, status) { this.message = message; this.status = status; }
-  function api(method, path, body) {
+  var isHandlingAuthKick = false;
+  function api(method, path, body, silentAuth) {
     var opt = { method: method, credentials: 'same-origin', headers: {} };
     if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     return fetch(path, opt).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
         if (!res.ok) {
-          if (res.status === 401 && S.user && path !== '/api/login') { S.user = null; toast('انتهت الجلسة، سجّل الدخول من جديد', true); location.hash = '#/'; render(); }
+          if (res.status === 401 && S.user && path !== '/api/login' && !silentAuth && !isHandlingAuthKick) {
+            isHandlingAuthKick = true;
+            S.user = null;
+            toast('انتهت الجلسة، سجّل الدخول من جديد', true);
+            location.hash = '#/';
+            render();
+            setTimeout(function () { isHandlingAuthKick = false; }, 3000);
+          }
           throw new ApiError(data.message || 'حدث خطأ غير متوقع', res.status);
         }
         return data;
       });
     }, function () { throw new ApiError('تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.', 0); });
   }
-  var get = function (p) { return api('GET', p); };
+  var get = function (p, silentAuth) { return api('GET', p, undefined, silentAuth); };
   var post = function (p, b) { return api('POST', p, b || {}); };
   var put = function (p, b) { return api('PUT', p, b || {}); };
   var qs = function (o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(o[k]); }).join('&'); };
@@ -361,6 +369,9 @@
           if (!val) return toast('يرجى كتابة اسم المعلم أولاً للمتابعة', true);
           S.selectedTeacher = val;
           try { localStorage.setItem('selected_teacher_name', val); } catch (e) {}
+          post('/api/teachers', { name: val }).then(function () {
+            loadTeachersRoster(true);
+          }).catch(function () {});
           toast('أهلاً بك: ' + val);
           box.close();
           if (onDone) {
@@ -999,16 +1010,19 @@
     var date = getActiveDate();
     var gid = getActiveGroupId();
     var out = h('div');
+    var summaryHolder = h('div', { class: 'daily-summary-holder noprint' });
     var currentReportData = null;
+    var currentSummaryData = null;
+    var grpSelectElem = null;
 
     var dateIn = h('input', { type: 'date', value: date, onchange: function () {
       date = dateIn.value || date;
       setActiveDate(date);
-      load();
+      loadSummaryAndReport();
     } });
     var grpHolder = h('div');
 
-    var refreshBtn = btn('تحديث', { sm: true, ic: 'refresh', title: 'تحديث بيانات الكشف', on: function () { load(); } });
+    var refreshBtn = btn('تحديث', { sm: true, ic: 'refresh', title: 'تحديث بيانات الكشف', on: function () { loadSummaryAndReport(); } });
     var editBtn = (S.user && S.user.role === 'admin') ? btn('تعديل الغياب', {
       kind: 'primary',
       sm: true,
@@ -1034,6 +1048,7 @@
         h('div', { class: 'row' }, editBtn, refreshBtn, printButton())),
       h('div', { class: 'card noprint' },
         h('div', { class: 'grid' }, field('التاريخ', dateIn), field('الصف الأساسي', grpHolder))),
+      summaryHolder,
       out);
 
     loadGroups().then(function (groups) {
@@ -1048,8 +1063,71 @@
         setActiveGroupId(v);
         load();
       }));
-      load();
+      grpSelectElem = grpHolder.querySelector('select');
+      loadSummaryAndReport();
     }).catch(fail);
+
+    function loadSummaryAndReport() {
+      // جلب ملخص الحصص المرصودة لليوم لاختيار الصف تلقائياً إذا وُجد رصد
+      get('/api/reports/daily/summary?' + qs({ date: date }), true).then(function (sum) {
+        currentSummaryData = sum;
+        if (sum && sum.recorded_groups && sum.recorded_groups.length) {
+          var hasCurrent = sum.recorded_groups.some(function (rg) { return String(rg.group_id) === String(gid); });
+          if (!hasCurrent) {
+            // اختر أول صف رُصد اليوم تلقائياً
+            gid = String(sum.recorded_groups[0].group_id);
+            setActiveGroupId(gid);
+            if (grpSelectElem) grpSelectElem.value = gid;
+          }
+          paintSummaryBar(sum);
+        } else {
+          mount(summaryHolder, h('div', { class: 'card daily-summary-empty' },
+            h('p', { class: 'muted small', text: 'لا توجد حصص مرصودة مسجلة في هذا اليوم حتى الآن.' })));
+        }
+        load();
+      }).catch(function () {
+        load();
+      });
+    }
+
+    function paintSummaryBar(sum) {
+      if (!sum || !sum.recorded_groups || !sum.recorded_groups.length) {
+        mount(summaryHolder, null);
+        return;
+      }
+      mount(summaryHolder, h('div', { class: 'card daily-summary-card' },
+        h('div', { class: 'daily-summary-head' },
+          h('div', { class: 'row' },
+            icon('check'),
+            h('b', { text: 'الصفوف المرصودة لهذا اليوم (' + sum.date + '):' }),
+            h('span', { class: 'badge', text: sum.total_recorded_sessions + ' حصص مرصودة' })
+          ),
+          h('div', { class: 'row' },
+            h('span', { class: 'badge danger', text: 'إجمالي الغياب: ' + sum.total_absent + ' طالب' }),
+            sum.total_late > 0 ? h('span', { class: 'badge warn', text: 'المتأخرين: ' + sum.total_late }) : null
+          )
+        ),
+        h('div', { class: 'daily-summary-chips' }, sum.recorded_groups.map(function (rg) {
+          var isCur = String(rg.group_id) === String(gid);
+          var teachersText = rg.teachers.join('، ');
+          return h('button', {
+            type: 'button',
+            class: 'daily-class-chip' + (isCur ? ' active' : ''),
+            onclick: function () {
+              gid = String(rg.group_id);
+              setActiveGroupId(gid);
+              if (grpSelectElem) grpSelectElem.value = gid;
+              load();
+              paintSummaryBar(sum);
+            }
+          },
+            h('span', { class: 'chip-class', text: rg.group_name }),
+            h('span', { class: 'chip-teachers', text: rg.periods_count + ' حصص (' + teachersText + ')' }),
+            h('span', { class: 'chip-absent' + (rg.total_absent > 0 ? ' bad' : ' ok'), text: rg.total_absent + ' غائب' })
+          );
+        }))
+      ));
+    }
 
     function load() {
       if (!gid) { mount(out, empty('اختر الصف لعرض التقرير')); return; }
@@ -1099,7 +1177,7 @@
                     periodsCount: r.periods_count,
                     teachersByPeriod: r.teachers_by_period,
                     selectedStudentId: s.id,
-                    onDone: function () { load(); }
+                    onDone: function () { loadSummaryAndReport(); }
                   });
                 }
               })));
@@ -1107,10 +1185,97 @@
           tbody.append(row);
         });
         t.append(tbody);
+
+        // سجل تفاصيل حصص هذا الصف (كل معلم وحصته والطلاب الغائبين لديه)
+        var classRecords = (currentSummaryData?.all_records || []).filter(function (x) { return String(x.group_id) === String(gid); });
+        var classLogCard = null;
+        if (classRecords.length) {
+          classLogCard = h('div', { class: 'card' },
+            h('h3', { text: 'سجل الحصص والمعلمين الراصدين لهذا الصف' }),
+            h('p', { class: 'muted small' }, 'يوضح اسم المعلم الراصد لكل حصة وعدد الغياب المسجل:'),
+            h('div', { class: 't-wrap' }, h('table', null,
+              h('thead', null, h('tr', null,
+                h('th', { text: 'الحصة' }),
+                h('th', { text: 'المعلم الراصد' }),
+                h('th', { text: 'الغياب' }),
+                h('th', { text: 'المتأخرين' }),
+                h('th', { text: 'إجمالي الحضور' }),
+                isAdmin ? h('th', { class: 'noprint', text: 'تعديل' }) : null
+              )),
+              h('tbody', null, classRecords.map(function (rec) {
+                return h('tr', null,
+                  h('td', null, h('b', { text: 'الحصة ' + rec.period })),
+                  h('td', null, h('span', { class: 'badge', text: rec.teacher_name })),
+                  h('td', { class: 'count bad', text: (rec.absent || 0) + ' غائب' }),
+                  h('td', { class: 'count warn', text: (rec.late || 0) + ' متأخر' }),
+                  h('td', { text: ((rec.total || 0) - (rec.absent || 0)) + ' حاضر' }),
+                  isAdmin ? h('td', { class: 'noprint' }, btn('تعديل الحصة', {
+                    sm: true, ic: 'edit', on: function () {
+                      openAdminEditAbsenceModal({
+                        date: date,
+                        groupId: gid,
+                        groupName: r.group.name,
+                        students: r.students,
+                        periodsCount: r.periods_count,
+                        teachersByPeriod: r.teachers_by_period,
+                        selectedPeriod: rec.period,
+                        onDone: function () { loadSummaryAndReport(); }
+                      });
+                    }
+                  })) : null
+                );
+              }))
+            ))
+          );
+        }
+
+        // كشف عام للمدير يعرض جميع الحصص المرصودة بالمدرسة في ذلك اليوم
+        var fullSchoolCard = null;
+        if (isAdmin && currentSummaryData && currentSummaryData.all_records && currentSummaryData.all_records.length) {
+          fullSchoolCard = h('div', { class: 'card' },
+            h('h3', { text: 'سجل رصد جميع الحصص في المدرسة لليوم (عرض الإدارة الشامل)' }),
+            h('p', { class: 'muted small' }, 'إجمالي الحصص المرصودة اليوم: ' + currentSummaryData.total_recorded_sessions + ' حصة عبر مختلف الصفوف:'),
+            h('div', { class: 't-wrap' }, h('table', null,
+              h('thead', null, h('tr', null,
+                h('th', { text: 'الصف' }),
+                h('th', { text: 'الحصة' }),
+                h('th', { text: 'المعلم الراصد' }),
+                h('th', { text: 'عدد الغياب' }),
+                h('th', { text: 'التأخر' }),
+                h('th', { class: 'noprint', text: 'عرض الكشف' })
+              )),
+              h('tbody', null, currentSummaryData.all_records.map(function (ar) {
+                return h('tr', null,
+                  h('td', null, h('b', { text: ar.group_name })),
+                  h('td', { text: 'الحصة ' + ar.period }),
+                  h('td', null, h('span', { class: 'badge', text: ar.teacher_name })),
+                  h('td', { class: 'count bad', text: (ar.absent || 0) + ' غائب' }),
+                  h('td', { class: 'count warn', text: (ar.late || 0) + ' متأخر' }),
+                  h('td', { class: 'noprint' }, btn('عرض الصف', {
+                    sm: true,
+                    kind: 'primary',
+                    ic: 'eye',
+                    on: function () {
+                      gid = String(ar.group_id);
+                      setActiveGroupId(gid);
+                      if (grpSelectElem) grpSelectElem.value = gid;
+                      load();
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }))
+                );
+              }))
+            ))
+          );
+        }
+
         mount(out, h('div', { class: 'card' },
           h('div', { class: 'print-head' }, h('h3', { text: (S.pub.school_name || '') + ' — كشف الغياب اليومي' }),
             h('p', { class: 'muted' }, 'الصف: ' + r.group.name + ' | التاريخ: ' + r.date + ' (' + DAYS[dow(r.date)] + ')')),
-          h('div', { class: 't-wrap' }, t)));
+          h('div', { class: 't-wrap' }, t)),
+          classLogCard,
+          fullSchoolCard
+        );
       }).catch(fail);
     }
   }
@@ -1519,6 +1684,11 @@
         mount(out, h('div', { class: 'card' }, r.records.length ? r.records.map(function (x) {
           return h('div', { class: 'list-row' }, h('b', { text: 'الحصة ' + x.period }), h('span', { class: 'grow', text: x.group_name + ' — ' + x.teacher_name }),
             h('span', { class: 'count bad', text: 'غائب ' + (x.absent || 0) }), h('span', { class: 'count warn', text: 'متأخر ' + (x.late || 0) }),
+            btn('عرض الكشف', { sm: true, kind: 'primary', ic: 'eye', title: 'عرض كشف الغياب اليومي لهذا الصف', on: function () {
+              setActiveDate(date);
+              if (x.group_id) setActiveGroupId(String(x.group_id));
+              location.hash = '#reports/daily';
+            } }),
             btn('حذف', { sm: true, kind: 'danger', ic: 'trash', on: function () {
               confirmBox('حذف سجل الحصة؟', x.group_name + ' — الحصة ' + x.period + ' (' + x.teacher_name + ')', 'حذف', true).then(function (ok) {
                 if (ok) api('DELETE', '/api/admin/records/' + x.id).then(function () { toast('تم الحذف'); load(); }).catch(fail);

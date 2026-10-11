@@ -1375,4 +1375,98 @@ optgroup option {
   font-size: 1rem;
 }
 
+/* ---- شريط ملخص الصفوف المرصودة اليوم ---- */
+.daily-summary-card {
+  border: 1px solid var(--accent);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.daily-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.daily-summary-head b {
+  font-size: 1.05rem;
+  color: var(--text);
+}
+.daily-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.daily-class-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  text-align: right;
+  transition: all 0.2s ease;
+  min-width: 140px;
+}
+.daily-class-chip:hover {
+  border-color: var(--accent);
+  background: var(--surface2);
+  transform: translateY(-1px);
+}
+.daily-class-chip.active {
+  border-color: var(--accent);
+  background: rgba(14, 165, 233, 0.12);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.daily-class-chip .chip-class {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.daily-class-chip .chip-teachers {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.daily-class-chip .chip-absent {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+.daily-class-chip .chip-absent.bad {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.daily-class-chip .chip-absent.ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.daily-summary-empty {
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border-left: 3px solid var(--accent);
+}
+
+@media (max-width: 640px) {
+  .daily-summary-card { padding: 12px; }
+  .daily-summary-chips { gap: 8px; }
+  .daily-class-chip { min-width: 120px; padding: 6px 10px; }
+  .period-th { min-width: 65px; }
+  .period-th-teacher { max-width: 60px; font-size: 0.68rem; }
+}
+
+
 

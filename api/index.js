@@ -127,6 +127,8 @@ function makeD1(raw) {
 
 import { ROSTER_SQL } from './seed_roster.js';
 
+import { syncFromCloud } from '../server/cloud_sync.js';
+
 let dbInstance = null;
 
 function getDb() {
@@ -146,9 +148,18 @@ function getDb() {
     raw.exec(`
       UPDATE settings SET value = 'مدرسة حفص بن راشد' WHERE key = 'school_name';
       UPDATE settings SET value = 'الأستاذ طلال الهنائي' WHERE key = 'principal_name';
-      DELETE FROM teachers WHERE created_at = 1700000000000;
       UPDATE settings SET value = 'teacher@77' WHERE key = 'teacher_password_plain' AND value = 'tchr-salem-2026';
       DELETE FROM login_fail;
+      INSERT OR IGNORE INTO teachers (name, created_at) VALUES
+        ('جمال الدين احمد الطيب', 1700000000001),
+        ('محمد', 1700000000002),
+        ('أ. ابوبكر منصوري', 1700000000003),
+        ('وليد سعفان', 1700000000004);
+      INSERT OR IGNORE INTO teachers (name, created_at)
+      SELECT DISTINCT TRIM(teacher_name), MIN(created_at)
+        FROM records
+       WHERE teacher_name IS NOT NULL AND TRIM(teacher_name) != ''
+       GROUP BY TRIM(teacher_name);
     `);
     const plainPw = raw.prepare("SELECT value FROM settings WHERE key = 'teacher_password_plain'").all()[0]?.value;
     if (plainPw === 'teacher@77') {
@@ -167,8 +178,6 @@ function getDb() {
     if (groupCount < 30 || sampleStudent.includes('-') || sampleStudent.includes('/')) {
       raw.exec(`
         PRAGMA foreign_keys = OFF;
-        DELETE FROM entries;
-        DELETE FROM records;
         DELETE FROM enrollments;
         DELETE FROM students;
         DELETE FROM groups;
@@ -189,6 +198,7 @@ const app = createApp({ now: () => new Date() });
 export default async function handler(req, res) {
   try {
     const db = getDb();
+    await syncFromCloud(db).catch(() => {});
     const env = {
       DB: db,
       DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'Tal@al11',

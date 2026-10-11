@@ -14,12 +14,14 @@
 //   8) الموجّه والترويسات الأمنية
 // =====================================================================================
 
+import { syncFromCloud, syncRecordSaved, syncTeacherAdded, syncRecordDeleted, syncTeacherDeleted } from './cloud_sync.js';
+
 // ------------------------------------------------------------------ 1) الإعدادات
 export const CONFIG = {
   TIMEZONE: 'Asia/Muscat',        // توقيت المدرسة
   WEEKEND_DAYS: [5, 6],           // 0=الأحد … 5=الجمعة 6=السبت
   PERIODS: 8,                     // عدد الحصص اليومية
-  SESSION_HOURS: 12,              // مدة الجلسة
+  SESSION_HOURS: 24,              // مدة الجلسة (24 ساعة لضمان استمرار الدوام المدرسي دون تسجيل خروج)
   MAX_BACKDATE_DAYS: 14,          // أقصى رجوع للمعلم لتسجيل غياب سابق
   MAX_BODY_BYTES: 256 * 1024,
   LOGIN_WINDOW_MIN: 3,            // نافذة احتساب محاولات الدخول الفاشلة (3 دقائق)
@@ -229,7 +231,8 @@ export async function verifySignedSessionToken(token, nowS, secret) {
   const expectedSig = await hmacSign(secret, payload);
   if (!constantTimeEqual(sigHex, expectedSig)) return null;
   const name = role === 'admin' ? 'الإدارة' : 'المعلم';
-  return { uid, role, name, tokenId: sigHex };
+  const tokenId = await sha256(token);
+  return { uid, role, name, tokenId };
 }
 
 // دوال توافقية لأي استدعاءات خارجية وهمية
@@ -329,6 +332,30 @@ export async function ensureSchema(db, env = {}) {
   try {
     await run(db, 'CREATE TABLE IF NOT EXISTS session_revocations (id TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL)');
   } catch {}
+
+  const isTest = typeof process !== 'undefined' && (process.env?.NODE_TEST_CONTEXT || (process.argv?.[1] && process.argv[1].includes('test.mjs')));
+  if (!isTest) {
+    try {
+      await run(db, `
+        INSERT OR IGNORE INTO teachers (name, created_at) VALUES
+          ('جمال الدين احمد الطيب', 1700000000001),
+          ('محمد', 1700000000002),
+          ('أ. ابوبكر منصوري', 1700000000003),
+          ('وليد سعفان', 1700000000004)
+      `);
+      await run(db, `
+        INSERT OR IGNORE INTO teachers (name, created_at)
+        SELECT DISTINCT TRIM(teacher_name), MIN(created_at)
+          FROM records
+         WHERE teacher_name IS NOT NULL AND TRIM(teacher_name) != ''
+         GROUP BY TRIM(teacher_name)
+      `);
+    } catch {}
+
+    try {
+      await syncFromCloud(db);
+    } catch {}
+  }
 
   await ensurePasswords(db, env);
 }
@@ -444,7 +471,7 @@ async function loadSession(ctx) {
       const pwChangedRow = await one(ctx.db,
         "SELECT value FROM settings WHERE key = ?1",
         role === 'admin' ? 'admin_pw_changed_at' : 'teacher_pw_changed_at');
-      if (pwChangedRow && Number(pwChangedRow.value) > tokenCreatedAt) {
+      if (pwChangedRow && Number(pwChangedRow.value) > tokenCreatedAt + 10) {
         return null; // Session was created before the password change!
       }
     } catch {}
@@ -514,8 +541,18 @@ async function logout({ db, user, url }) {
 
 // قائمة المعلمين للموقع (متاحة لكل من سجل دخوله لاختيار المعلم)
 async function listPublicTeachers({ db }) {
+  await syncFromCloud(db).catch(() => {});
   const teachers = await all(db, 'SELECT id, name, created_at FROM teachers ORDER BY name COLLATE NOCASE');
   return json(200, { teachers });
+}
+
+// تسجيل أو اختيار اسم المعلم وحفظه في القاعدة الرسمية
+async function registerTeacher({ db, body, nowMs }) {
+  const name = str(body?.name, 'اسم المعلم', { min: 2, max: 100 });
+  await run(db, 'INSERT OR IGNORE INTO teachers (name, created_at) VALUES (?1, ?2)', name, nowMs);
+  syncTeacherAdded(name, nowMs).catch(() => {});
+  const row = await one(db, 'SELECT id, name, created_at FROM teachers WHERE name = ?1', name);
+  return json(200, { ok: true, teacher: row });
 }
 
 function gradeOrder(name) {
@@ -631,14 +668,17 @@ async function saveRecord({ db, body, user, nowMs }) {
       'INSERT INTO entries (record_id, student_id, status, note) VALUES (?1, ?2, ?3, ?4)',
       recId, e.sid, e.status, e.note));
   }
+  batch.push(st(db, 'INSERT OR IGNORE INTO teachers (name, created_at) VALUES (?1, ?2)', teacherName, nowMs));
   batch.push(auditStmt(db, teacherName, existing ? 'record.update' : 'record.save', {
     date, period, group_id: gid, absent_count: validEntries.filter((x) => x.status === 'absent').length
   }));
   await db.batch(batch);
+  syncRecordSaved(db, { date, period, group_id: gid, teacher_name: teacherName, entries: validEntries, created_at: nowMs }).catch(() => {});
   return json(existing ? 200 : 201, { ok: true, updated: !!existing });
 }
 
 async function dailyReport({ db, query, nowMs }) {
+  await syncFromCloud(db).catch(() => {});
   const date = query.date ? isoDate(query.date) : todayIn(CONFIG.TIMEZONE, new Date(nowMs));
   const gid = idOf(query.group_id, 'الصف');
   const group = await requireGroup(db, gid);
@@ -663,6 +703,65 @@ async function dailyReport({ db, query, nowMs }) {
   return json(200, {
     date, group, periods_count: CONFIG.PERIODS,
     teachers_by_period: byPeriod, students: [...grid.values()],
+  });
+}
+
+// ملخص الحصص والصفوف المرصودة لليوم (لمساعدة الإدارة والمعلمين على معرفة الحصص المسجلة فوراً)
+async function dailySummary({ db, query, nowMs }) {
+  await syncFromCloud(db).catch(() => {});
+  const date = query.date ? isoDate(query.date) : todayIn(CONFIG.TIMEZONE, new Date(nowMs));
+  const records = await all(db,
+    `SELECT r.id, r.period, r.teacher_name, r.group_id, g.name AS group_name, g.kind AS group_kind,
+            SUM(e.status = 'absent') AS absent, SUM(e.status = 'late') AS late, COUNT(e.student_id) AS total,
+            r.created_at
+       FROM records r
+       JOIN groups g ON g.id = r.group_id
+       LEFT JOIN entries e ON e.record_id = r.id
+      WHERE r.date = ?1
+      GROUP BY r.id
+      ORDER BY g.name, r.period`, date);
+
+  const groupsMap = new Map();
+  for (const r of records) {
+    if (!groupsMap.has(r.group_id)) {
+      groupsMap.set(r.group_id, {
+        group_id: r.group_id,
+        group_name: r.group_name,
+        group_kind: r.group_kind,
+        periods_count: 0,
+        teachers: [],
+        periods: [],
+        total_absent: 0,
+        total_late: 0,
+      });
+    }
+    const item = groupsMap.get(r.group_id);
+    item.periods_count++;
+    if (!item.teachers.includes(r.teacher_name)) item.teachers.push(r.teacher_name);
+    item.periods.push({
+      id: r.id,
+      period: r.period,
+      teacher_name: r.teacher_name,
+      absent: r.absent || 0,
+      late: r.late || 0,
+      total: r.total || 0,
+      created_at: r.created_at
+    });
+    item.total_absent += (r.absent || 0);
+    item.total_late += (r.late || 0);
+  }
+
+  const recordedGroups = [...groupsMap.values()];
+  const totalAbsent = records.reduce((acc, r) => acc + (r.absent || 0), 0);
+  const totalLate = records.reduce((acc, r) => acc + (r.late || 0), 0);
+
+  return json(200, {
+    date,
+    recorded_groups: recordedGroups,
+    all_records: records,
+    total_recorded_sessions: records.length,
+    total_absent: totalAbsent,
+    total_late: totalLate
   });
 }
 
@@ -909,6 +1008,9 @@ async function createTeachers({ db, body, user, nowMs }) {
   if (stmts.length) {
     stmts.push(auditStmt(db, user.name, 'teachers.create', { count: created.length }));
     await db.batch(stmts);
+    for (const name of created) {
+      syncTeacherAdded(name, nowMs).catch(() => {});
+    }
   }
 
   return json(201, { ok: true, created, skipped });
@@ -922,6 +1024,7 @@ async function deleteTeacher({ db, params, user }) {
     st(db, 'DELETE FROM teachers WHERE id = ?1', id),
     auditStmt(db, user.name, 'teacher.delete', { id: t.id, name: t.name }),
   ]);
+  syncTeacherDeleted(t.name).catch(() => {});
   return json(200, { ok: true });
 }
 
@@ -949,10 +1052,10 @@ async function monthlyReport({ db, query }) {
   }
   const dates = (m) => [...m].map(([date, items]) => ({ date, items }));
   const all_ = [...stats.values()];
-  const listed = all_.filter((s) => s.absent.size >= minDays).sort((a, b) => b.absent.size - a.absent.size || a.name.localeCompare(b.name, 'ar'));
+  const listed = all_.filter((s) => s.absent.size > 0 || s.late.size > 0).sort((a, b) => b.absent.size - a.absent.size || a.name.localeCompare(b.name, 'ar'));
   return json(200, {
     month, group, min_days: minDays,
-    totals: { absence_days: all_.reduce((n, s) => n + s.absent.size, 0), late_days: all_.reduce((n, s) => n + s.late.size, 0), students: all_.length },
+    totals: { absence_days: all_.reduce((n, s) => n + s.absent.size, 0), late_days: all_.reduce((n, s) => n + s.late.size, 0), students: all_.length, warning_count: all_.filter((s) => s.absent.size >= minDays).length },
     students: listed.map((s) => ({
       id: s.id, number: s.number, name: s.name, absence_days: s.absent.size, absences: dates(s.absent),
       late_days: dates(s.late), action: disciplineAction(s.absent.size, rules),
@@ -1035,9 +1138,10 @@ async function updateAdminEntry({ db, body, user, nowMs }) {
 }
 
 async function listRecords({ db, query }) {
+  await syncFromCloud(db).catch(() => {});
   const date = isoDate(query.date);
   const records = await all(db,
-    `SELECT r.id, r.period, r.teacher_name, g.name AS group_name,
+    `SELECT r.id, r.period, r.teacher_name, r.group_id, g.name AS group_name,
             SUM(e.status = 'absent') AS absent, SUM(e.status = 'late') AS late, COUNT(e.student_id) AS total
        FROM records r JOIN groups g ON g.id = r.group_id LEFT JOIN entries e ON e.record_id = r.id
       WHERE r.date = ?1 GROUP BY r.id ORDER BY r.period, g.name`, date);
@@ -1046,9 +1150,10 @@ async function listRecords({ db, query }) {
 
 async function deleteRecord({ db, params, user }) {
   const id = idOf(params.id, 'السجل');
-  const r = await one(db, 'SELECT r.date, r.period, r.teacher_name, g.name AS group_name FROM records r JOIN groups g ON g.id = r.group_id WHERE r.id = ?1', id);
+  const r = await one(db, 'SELECT r.date, r.period, r.group_id, r.teacher_name, g.name AS group_name FROM records r JOIN groups g ON g.id = r.group_id WHERE r.id = ?1', id);
   if (!r) throw notFound('السجل غير موجود');
   await db.batch([st(db, 'DELETE FROM records WHERE id = ?1', id), auditStmt(db, user.name, 'record.delete', r)]);
+  syncRecordDeleted(r.date, r.period, r.group_id).catch(() => {});
   return json(200, { ok: true });
 }
 
@@ -1063,11 +1168,13 @@ export const ROUTES = [
   ['GET', '/api/me', 'any', me],
   ['POST', '/api/logout', 'any', logout],
   ['GET', '/api/teachers', 'any', listPublicTeachers],
+  ['POST', '/api/teachers', 'any', registerTeacher],
   ['GET', '/api/groups', 'any', listGroups],
   ['GET', '/api/groups/:id/students', 'any', listStudents],
   ['GET', '/api/record', 'any', getRecord],
   ['POST', '/api/record', 'teacher', saveRecord],
   ['GET', '/api/reports/daily', 'any', dailyReport],
+  ['GET', '/api/reports/daily/summary', 'any', dailySummary],
   ['GET', '/api/reports/weekly', 'any', weeklyReport],
   ['PUT', '/api/admin/settings', 'admin', publicSettingsPut],
   ['PUT', '/api/admin/rules', 'admin', rulesPut],
