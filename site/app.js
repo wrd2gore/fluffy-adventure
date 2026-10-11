@@ -801,8 +801,9 @@
         });
         var seatDisplay = s.number.includes('-') ? s.number.split('-').slice(1).join('-') : s.number;
         list.append(h('li', { 'data-id': s.id, 'data-s': cur },
-          h('span', { class: 'num', text: seatDisplay, title: s.number }),
-          h('span', { class: 'nm', text: s.name }),
+          h('div', { class: 'stu-head' },
+            h('span', { class: 'num', text: seatDisplay, title: s.number }),
+            h('span', { class: 'nm', text: s.name })),
           seg,
           why));
       });
