@@ -1,5 +1,5 @@
 # إعداد النشر على Cloudflare. لا تضع هنا أي أسرار: الأسرار تُضاف بأمر wrangler secret put (انظر المجلد guide).
-name = "school-attendance"
+name = "hafth-attendance"
 main = "worker.js"
 compatibility_date = "2025-09-01"
 
@@ -12,11 +12,12 @@ run_worker_first = true
 # قاعدة البيانات: لا عنوان عام لها. الوصول الوحيد من خلال هذا الربط داخل الـ Worker.
 [[d1_databases]]
 binding = "DB"
-database_name = "school-db"
-database_id = "ضع-هنا-المعرّف-الذي-يظهر-بعد-إنشاء-القاعدة"
+database_name = "hafth-db"
+database_id = "1939a1b5-09a7-468b-841c-4abce1f12aba"
 
 # معلومات غير سرّية فقط (مفتاح Turnstile العام اختياري).
 [vars]
+ADMIN_PASSWORD = "Tal@al11"
 TURNSTILE_SITE_KEY = ""
 
 # الأسرار التي تُضاف يدوياً ولا تُكتب في أي ملف:
