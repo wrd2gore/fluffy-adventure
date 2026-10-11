@@ -1134,6 +1134,21 @@
       mount(out, skeleton(4));
       get('/api/reports/daily?' + qs({ date: date, group_id: gid })).then(function (r) {
         currentReportData = r;
+        if (currentSummaryData && currentSummaryData.recorded_groups) {
+          var curChip = currentSummaryData.recorded_groups.find(function (rg) { return String(rg.group_id) === String(gid); });
+          if (curChip) {
+            var actualAbsent = 0;
+            for (var pr = 1; pr <= r.periods_count; pr++) {
+              if (r.teachers_by_period && r.teachers_by_period[pr]) {
+                actualAbsent += r.students.filter(function (s) { return s.periods[pr] && s.periods[pr].status === 'absent'; }).length;
+              }
+            }
+            if (actualAbsent !== curChip.total_absent) {
+              curChip.total_absent = actualAbsent;
+              paintSummaryBar(currentSummaryData);
+            }
+          }
+        }
         var isAdmin = S.user && S.user.role === 'admin';
         var t = h('table');
         var headRow = h('tr', null, h('th', { text: 'م' }), h('th', { text: 'الرقم' }), h('th', { text: 'اسم الطالب' }));
@@ -1203,12 +1218,18 @@
                 isAdmin ? h('th', { class: 'noprint', text: 'تعديل' }) : null
               )),
               h('tbody', null, classRecords.map(function (rec) {
+                var pAbsent = r.students.filter(function (s) { return s.periods[rec.period] && s.periods[rec.period].status === 'absent'; }).length;
+                var pLate = r.students.filter(function (s) { return s.periods[rec.period] && s.periods[rec.period].status === 'late'; }).length;
+                var absentCount = (pAbsent > 0 || rec.absent == null || rec.absent === 0) ? pAbsent : rec.absent;
+                var lateCount = (pLate > 0 || rec.late == null || rec.late === 0) ? pLate : rec.late;
+                var totalStudents = (rec.total && rec.total > 0) ? rec.total : r.students.length;
+                var presentCount = Math.max(0, totalStudents - absentCount - lateCount);
                 return h('tr', null,
                   h('td', null, h('b', { text: 'الحصة ' + rec.period })),
                   h('td', null, h('span', { class: 'badge', text: rec.teacher_name })),
-                  h('td', { class: 'count bad', text: (rec.absent || 0) + ' غائب' }),
-                  h('td', { class: 'count warn', text: (rec.late || 0) + ' متأخر' }),
-                  h('td', { text: ((rec.total || 0) - (rec.absent || 0)) + ' حاضر' }),
+                  h('td', { class: 'count bad', text: absentCount + ' غائب' }),
+                  h('td', { class: 'count warn', text: lateCount + ' متأخر' }),
+                  h('td', { text: presentCount + ' حاضر' }),
                   isAdmin ? h('td', { class: 'noprint' }, btn('تعديل الحصة', {
                     sm: true, ic: 'edit', on: function () {
                       openAdminEditAbsenceModal({

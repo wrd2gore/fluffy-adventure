@@ -712,7 +712,9 @@ async function dailySummary({ db, query, nowMs }) {
   const date = query.date ? isoDate(query.date) : todayIn(CONFIG.TIMEZONE, new Date(nowMs));
   const records = await all(db,
     `SELECT r.id, r.period, r.teacher_name, r.group_id, g.name AS group_name, g.kind AS group_kind,
-            SUM(e.status = 'absent') AS absent, SUM(e.status = 'late') AS late, COUNT(e.student_id) AS total,
+            COALESCE(SUM(CASE WHEN e.status = 'absent' THEN 1 ELSE 0 END), 0) AS absent,
+            COALESCE(SUM(CASE WHEN e.status = 'late' THEN 1 ELSE 0 END), 0) AS late,
+            (SELECT COUNT(*) FROM enrollments WHERE group_id = r.group_id) AS total,
             r.created_at
        FROM records r
        JOIN groups g ON g.id = r.group_id
